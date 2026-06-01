@@ -1,0 +1,23 @@
+android {
+    namespace "com.example.smart_music_player"
+    compileSdk 34
+
+    defaultConfig {
+        applicationId "com.example.smart_music_player"
+        minSdk 21
+        targetSdk 34
+        versionCode 1
+        versionName "1.0.0"
+    }
+
+    buildTypes {
+        release {
+            signingConfig signingConfigs.debug
+            minifyEnabled false
+        }
+    }
+}
+
+dependencies {
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:$kotlin_version"
+}
