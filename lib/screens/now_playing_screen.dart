@@ -3,6 +3,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../services/audio_player_service.dart';
+import '../models/repeat_mode.dart';
 import '../theme/app_theme.dart';
 import '../models/song.dart';
 
@@ -19,7 +20,6 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
   late AnimationController _pulseController;
   late Animation<double> _pulseAnim;
 
-  // BUG FIX: track playing state locally to avoid calling animate in build()
   bool _wasPlaying = false;
 
   @override
@@ -39,9 +39,8 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
       CurvedAnimation(parent: _pulseController, curve: Curves.easeInOut),
     );
 
-    // Listen to player state to drive animation
-    final audioService =
-        context.read<MusicProvider>().audioService;
+    final audioService = context.read<MusicProvider>().audioService;
+
     audioService.playerStateStream.listen((state) {
       if (!mounted) return;
       final playing = state.playing;
@@ -54,7 +53,6 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
       }
     });
 
-    // Start if already playing
     if (audioService.isPlaying) {
       _rotateController.repeat();
       _wasPlaying = true;
@@ -93,10 +91,12 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
                   child: Column(
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
-                      Icon(Icons.music_off, color: AppTheme.textSecondary, size: 64),
+                      Icon(Icons.music_off_rounded,
+                          color: AppTheme.textSecondary, size: 64),
                       SizedBox(height: 16),
                       Text('Nothing playing',
-                          style: TextStyle(color: AppTheme.textSecondary, fontSize: 16)),
+                          style: TextStyle(
+                              color: AppTheme.textSecondary, fontSize: 16)),
                     ],
                   ),
                 ),
@@ -194,7 +194,8 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
             ),
           ),
           IconButton(
-            icon: const Icon(Icons.timer_outlined, color: Colors.white, size: 22),
+            icon:
+                const Icon(Icons.timer_outlined, color: Colors.white, size: 22),
             onPressed: () => _showSleepTimer(context, audioService),
           ),
         ],
@@ -237,9 +238,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
                 ),
                 child: Center(
                   child: Text(
-                    song.title.isNotEmpty
-                        ? song.title[0].toUpperCase()
-                        : '♪',
+                    song.title.isNotEmpty ? song.title[0].toUpperCase() : '♪',
                     style: const TextStyle(
                       color: Colors.white,
                       fontSize: 32,
@@ -256,13 +255,13 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
   }
 
   LinearGradient _getSongGradient(Song song) {
-    final gradients = [
-      const LinearGradient(colors: [Color(0xFF6C63FF), Color(0xFFFF6B9D)]),
-      const LinearGradient(colors: [Color(0xFFFF6B9D), Color(0xFFFF9500)]),
-      const LinearGradient(colors: [Color(0xFF00D4AA), Color(0xFF6C63FF)]),
-      const LinearGradient(colors: [Color(0xFFFF9500), Color(0xFFFF6B9D)]),
-      const LinearGradient(colors: [Color(0xFFAF52DE), Color(0xFF00D4AA)]),
-      const LinearGradient(colors: [Color(0xFF34C759), Color(0xFF6C63FF)]),
+    const gradients = [
+      LinearGradient(colors: [Color(0xFF6C63FF), Color(0xFFFF6B9D)]),
+      LinearGradient(colors: [Color(0xFFFF6B9D), Color(0xFFFF9500)]),
+      LinearGradient(colors: [Color(0xFF00D4AA), Color(0xFF6C63FF)]),
+      LinearGradient(colors: [Color(0xFFFF9500), Color(0xFFFF6B9D)]),
+      LinearGradient(colors: [Color(0xFFAF52DE), Color(0xFF00D4AA)]),
+      LinearGradient(colors: [Color(0xFF34C759), Color(0xFF6C63FF)]),
     ];
     return gradients[song.title.hashCode.abs() % gradients.length];
   }
@@ -309,7 +308,9 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               child: Icon(
-                song.isFavorite ? Icons.favorite : Icons.favorite_border,
+                song.isFavorite
+                    ? Icons.favorite_rounded
+                    : Icons.favorite_outline_rounded,
                 key: ValueKey(song.isFavorite),
                 color: song.isFavorite
                     ? AppTheme.accentSecondary
@@ -393,7 +394,6 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          // Shuffle
           _ControlButton(
             icon: Icons.shuffle_rounded,
             isActive: audioService.isShuffle,
@@ -403,13 +403,11 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
               setState(() {});
             },
           ),
-          // Previous
           IconButton(
             icon: const Icon(Icons.skip_previous_rounded,
                 color: Colors.white, size: 38),
             onPressed: audioService.previous,
           ),
-          // Play/Pause
           GestureDetector(
             onTap: () {
               if (isPlaying) {
@@ -433,21 +431,18 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
                 ],
               ),
               child: Icon(
-                isPlaying
-                    ? Icons.pause_rounded
-                    : Icons.play_arrow_rounded,
+                isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
                 color: Colors.white,
                 size: 38,
               ),
             ),
           ),
-          // Next
           IconButton(
             icon: const Icon(Icons.skip_next_rounded,
                 color: Colors.white, size: 38),
             onPressed: audioService.next,
           ),
-          // Repeat
+          // RepeatMode is now imported from models/repeat_mode.dart — no ambiguity
           _ControlButton(
             icon: audioService.repeatMode == RepeatMode.one
                 ? Icons.repeat_one_rounded
@@ -516,8 +511,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.05),
           borderRadius: BorderRadius.circular(12),
-          border:
-              Border.all(color: Colors.white.withOpacity(0.08)),
+          border: Border.all(color: Colors.white.withOpacity(0.08)),
         ),
         child: Row(
           children: [
@@ -525,8 +519,7 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
                 color: AppTheme.textSecondary, size: 16),
             const SizedBox(width: 10),
             const Text('Next: ',
-                style: TextStyle(
-                    color: AppTheme.textSecondary, fontSize: 12)),
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
             Expanded(
               child: Text(
                 '${next.title} — ${next.artist}',
@@ -544,82 +537,78 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
     );
   }
 
-  void _showSleepTimer(
-      BuildContext context, AudioPlayerService audioService) {
+  void _showSleepTimer(BuildContext context, AudioPlayerService audioService) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppTheme.surfaceDark,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
       ),
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) => Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              margin: const EdgeInsets.only(top: 12, bottom: 4),
-              decoration: BoxDecoration(
-                color: Colors.white12,
-                borderRadius: BorderRadius.circular(2),
-              ),
+      builder: (ctx) => Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 40,
+            height: 4,
+            margin: const EdgeInsets.only(top: 12, bottom: 4),
+            decoration: BoxDecoration(
+                color: Colors.white12, borderRadius: BorderRadius.circular(2)),
+          ),
+          const Padding(
+            padding: EdgeInsets.all(16),
+            child: Text(
+              'Sleep Timer',
+              style: TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 18,
+                  fontWeight: FontWeight.w600),
             ),
-            const Padding(
-              padding: EdgeInsets.all(16),
+          ),
+          if (audioService.sleepTimerRemaining != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 8),
               child: Text(
-                'Sleep Timer',
-                style: TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w600),
+                'Stops in ${audioService.sleepTimerRemaining!.inMinutes}m '
+                '${audioService.sleepTimerRemaining!.inSeconds % 60}s',
+                style: const TextStyle(
+                    color: AppTheme.accentTertiary, fontSize: 13),
               ),
             ),
-            if (audioService.sleepTimerRemaining != null)
-              Padding(
-                padding: const EdgeInsets.only(bottom: 8),
-                child: Text(
-                  'Stops in ${audioService.sleepTimerRemaining!.inMinutes}m ${audioService.sleepTimerRemaining!.inSeconds % 60}s',
-                  style: const TextStyle(
-                      color: AppTheme.accentTertiary, fontSize: 13),
-                ),
-              ),
-            ...[15, 30, 60].map((min) => ListTile(
-                  leading: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: AppTheme.accent.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: const Icon(Icons.timer_outlined,
-                        color: AppTheme.accent, size: 20),
+          ...[15, 30, 60].map((min) => ListTile(
+                leading: Container(
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: AppTheme.accent.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(10),
                   ),
-                  title: Text('$min minutes'),
-                  onTap: () {
-                    audioService.setSleepTimer(min);
-                    Navigator.pop(ctx);
-                    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                      content: Text('Sleep timer: $min minutes'),
-                      backgroundColor: AppTheme.accent,
-                      behavior: SnackBarBehavior.floating,
-                    ));
-                  },
-                )),
-            if (audioService.sleepTimerRemaining != null)
-              ListTile(
-                leading: const Icon(Icons.timer_off_outlined,
-                    color: Colors.redAccent),
-                title: const Text('Cancel Timer',
-                    style: TextStyle(color: Colors.redAccent)),
+                  child: const Icon(Icons.timer_outlined,
+                      color: AppTheme.accent, size: 20),
+                ),
+                title: Text('$min minutes'),
                 onTap: () {
-                  audioService.cancelSleepTimer();
+                  audioService.setSleepTimer(min);
                   Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+                    content: Text('Sleep timer: $min minutes'),
+                    backgroundColor: AppTheme.accent,
+                    behavior: SnackBarBehavior.floating,
+                  ));
                 },
-              ),
-            const SizedBox(height: 16),
-          ],
-        ),
+              )),
+          if (audioService.sleepTimerRemaining != null)
+            ListTile(
+              leading:
+                  const Icon(Icons.timer_off_outlined, color: Colors.redAccent),
+              title: const Text('Cancel Timer',
+                  style: TextStyle(color: Colors.redAccent)),
+              onTap: () {
+                audioService.cancelSleepTimer();
+                Navigator.pop(ctx);
+              },
+            ),
+          const SizedBox(height: 16),
+        ],
       ),
     );
   }

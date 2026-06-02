@@ -76,7 +76,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                     children: [
                       _buildStatsCards(provider.userStats),
                       const SizedBox(height: 16),
-                      // BUG FIX: favorite artist now displayed
                       _buildFavoriteArtistCard(),
                       const SizedBox(height: 16),
                       _buildDailyChart(),
@@ -122,7 +121,6 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
-  // BUG FIX: added missing favorite artist display
   Widget _buildFavoriteArtistCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -134,8 +132,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ],
         ),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-            color: AppTheme.accentSecondary.withOpacity(0.2)),
+        border: Border.all(color: AppTheme.accentSecondary.withOpacity(0.2)),
       ),
       child: Row(
         children: [
@@ -155,8 +152,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const Text('Favorite Artist',
-                    style: TextStyle(
-                        color: AppTheme.textSecondary, fontSize: 12)),
+                    style:
+                        TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
                 const SizedBox(height: 2),
                 Text(
                   _favoriteArtist,
@@ -188,8 +185,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                 child: Text(
                   'No listening history yet.\nStart playing music!',
                   textAlign: TextAlign.center,
-                  style: TextStyle(
-                      color: AppTheme.textSecondary, fontSize: 13),
+                  style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
                 ),
               ),
             )
@@ -294,9 +290,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         width: 28,
                         height: 28,
                         decoration: BoxDecoration(
-                          gradient: rank == 0
-                              ? AppTheme.accentGradient
-                              : null,
+                          gradient: rank == 0 ? AppTheme.accentGradient : null,
                           color: rank > 0 ? AppTheme.surfaceDark : null,
                           shape: BoxShape.circle,
                         ),
@@ -359,8 +353,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     final moodCounts = <String, int>{};
     for (final song in provider.rawSongs) {
       if (song.moodTag != null && song.moodTag!.isNotEmpty) {
-        moodCounts[song.moodTag!] =
-            (moodCounts[song.moodTag!] ?? 0) + 1;
+        moodCounts[song.moodTag!] = (moodCounts[song.moodTag!] ?? 0) + 1;
       }
     }
 
@@ -382,8 +375,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
 
     final total = moodCounts.values.fold(0, (a, b) => a + b);
     const moodEmojis = {
-      'happy': '😊', 'sad': '😔', 'focus': '📚',
-      'chill': '😌', 'workout': '💪',
+      'happy': '😊',
+      'sad': '😔',
+      'focus': '📚',
+      'chill': '😌',
+      'workout': '💪',
     };
 
     return _card(
@@ -414,11 +410,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                                 fontWeight: FontWeight.w500),
                           ),
                           Text(
-                            '${e.value} song${e.value != 1 ? 's' : ''}  '
-                            '(${(pct * 100).round()}%)',
+                            '${e.value} song${e.value != 1 ? 's' : ''}  (${(pct * 100).round()}%)',
                             style: const TextStyle(
-                                color: AppTheme.textSecondary,
-                                fontSize: 11),
+                                color: AppTheme.textSecondary, fontSize: 11),
                           ),
                         ],
                       ),
@@ -428,8 +422,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                         child: LinearProgressIndicator(
                           value: pct,
                           backgroundColor: color.withOpacity(0.1),
-                          valueColor:
-                              AlwaysStoppedAnimation<Color>(color),
+                          valueColor: AlwaysStoppedAnimation<Color>(color),
                           minHeight: 6,
                         ),
                       ),
@@ -445,7 +438,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Widget _buildBadgesSection(MusicProvider provider) {
-    final all = Badge.allBadges();
+    // FIX: use AchievementBadge instead of Badge (Badge conflicts with Flutter Material 3)
+    final all = AchievementBadge.allBadges();
     for (final b in all) {
       b.isUnlocked = provider.unlockedBadges.contains(b.type);
     }
@@ -473,8 +467,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                   width: 52,
                   height: 52,
                   decoration: BoxDecoration(
-                    gradient:
-                        badge.isUnlocked ? AppTheme.accentGradient : null,
+                    gradient: badge.isUnlocked ? AppTheme.accentGradient : null,
                     color: badge.isUnlocked ? null : AppTheme.surfaceDark,
                     shape: BoxShape.circle,
                     border: badge.isUnlocked
@@ -486,8 +479,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       badge.emoji,
                       style: TextStyle(
                         fontSize: 22,
-                        color:
-                            badge.isUnlocked ? null : Colors.grey[700],
+                        color: badge.isUnlocked ? null : Colors.grey[700],
                       ),
                     ),
                   ),
@@ -571,9 +563,7 @@ class _StatCard extends StatelessWidget {
             const SizedBox(height: 8),
             Text(value,
                 style: TextStyle(
-                    color: color,
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800)),
+                    color: color, fontSize: 18, fontWeight: FontWeight.w800)),
             Text(label,
                 style: const TextStyle(
                     color: AppTheme.textSecondary, fontSize: 10)),

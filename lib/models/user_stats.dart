@@ -88,7 +88,9 @@ enum BadgeType {
   favoritesCollector,
 }
 
-class Badge {
+// Renamed from Badge to AchievementBadge to avoid conflict with
+// Flutter Material 3's built-in Badge widget
+class AchievementBadge {
   final BadgeType type;
   final String title;
   final String description;
@@ -96,7 +98,7 @@ class Badge {
   bool isUnlocked;
   DateTime? unlockedAt;
 
-  Badge({
+  AchievementBadge({
     required this.type,
     required this.title,
     required this.description,
@@ -105,51 +107,51 @@ class Badge {
     this.unlockedAt,
   });
 
-  static List<Badge> allBadges() {
+  static List<AchievementBadge> allBadges() {
     return [
-      Badge(
+      AchievementBadge(
         type: BadgeType.sevenDayListener,
         title: '7-Day Listener',
         description: 'Listen to music 7 days in a row',
         emoji: '🔥',
       ),
-      Badge(
+      AchievementBadge(
         type: BadgeType.hundredSongsPlayed,
         title: '100 Songs Played',
         description: 'Play 100 songs total',
         emoji: '💯',
       ),
-      Badge(
+      AchievementBadge(
         type: BadgeType.playlistCreator,
         title: 'Playlist Creator',
         description: 'Create your first playlist',
         emoji: '🎵',
       ),
-      Badge(
+      AchievementBadge(
         type: BadgeType.nightOwl,
         title: 'Night Owl',
-        description: 'Listen to music after midnight',
+        description: 'Listen after midnight',
         emoji: '🦉',
       ),
-      Badge(
+      AchievementBadge(
         type: BadgeType.morningPerson,
         title: 'Early Bird',
         description: 'Listen to music before 6 AM',
         emoji: '🌅',
       ),
-      Badge(
+      AchievementBadge(
         type: BadgeType.marathonListener,
         title: 'Marathon Listener',
         description: 'Listen for 10+ hours total',
         emoji: '🏆',
       ),
-      Badge(
+      AchievementBadge(
         type: BadgeType.shuffleKing,
         title: 'Shuffle King',
         description: 'Use shuffle mode 50 times',
         emoji: '🎲',
       ),
-      Badge(
+      AchievementBadge(
         type: BadgeType.favoritesCollector,
         title: 'Favorites Collector',
         description: 'Add 20 songs to favorites',

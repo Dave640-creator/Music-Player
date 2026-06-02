@@ -4,8 +4,7 @@ import 'package:just_audio_background/just_audio_background.dart';
 import '../models/song.dart';
 import '../database/database_helper.dart';
 import '../models/user_stats.dart';
-
-enum RepeatMode { none, one, all }
+import '../models/repeat_mode.dart';
 
 class AudioPlayerService {
   static final AudioPlayerService _instance = AudioPlayerService._internal();
@@ -87,9 +86,7 @@ class AudioPlayerService {
           title: song.title,
           artist: song.artist,
           album: song.album,
-          artUri: song.artworkPath != null
-              ? Uri.file(song.artworkPath!)
-              : null,
+          artUri: song.artworkPath != null ? Uri.file(song.artworkPath!) : null,
         ),
       );
 
@@ -227,8 +224,7 @@ class AudioPlayerService {
 
   Future<void> _saveListeningHistory() async {
     if (_currentSong?.id == null || _playStartTime == null) return;
-    final durationPlayed =
-        DateTime.now().difference(_playStartTime!).inSeconds;
+    final durationPlayed = DateTime.now().difference(_playStartTime!).inSeconds;
     if (durationPlayed < 5) return;
 
     await _db.addListeningHistory(ListeningHistory(
