@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:just_audio/just_audio.dart';
+import 'package:just_audio/just_audio.dart' hide RepeatMode;
 import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../services/audio_player_service.dart';
@@ -442,12 +442,12 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
                 color: Colors.white, size: 38),
             onPressed: audioService.next,
           ),
-          // RepeatMode is now imported from models/repeat_mode.dart — no ambiguity
+          // PlayerRepeatMode is now imported from models/repeat_mode.dart — no ambiguity
           _ControlButton(
-            icon: audioService.repeatMode == RepeatMode.one
+            icon: audioService.repeatMode == PlayerRepeatMode.one
                 ? Icons.repeat_one_rounded
                 : Icons.repeat_rounded,
-            isActive: audioService.repeatMode != RepeatMode.none,
+            isActive: audioService.repeatMode != PlayerRepeatMode.none,
             size: 22,
             onTap: () {
               audioService.cycleRepeatMode();

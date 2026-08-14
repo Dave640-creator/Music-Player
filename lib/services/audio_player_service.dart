@@ -17,7 +17,7 @@ class AudioPlayerService {
   List<Song> _queue = [];
   int _currentIndex = 0;
   bool _isShuffle = false;
-  RepeatMode _repeatMode = RepeatMode.none;
+  PlayerRepeatMode _repeatMode = PlayerRepeatMode.none;
   List<int> _shuffleIndices = [];
 
   // BUG FIX: track skip attempts to prevent infinite recursion when all files are broken
@@ -36,7 +36,7 @@ class AudioPlayerService {
   List<Song> get queue => _queue;
   int get currentIndex => _currentIndex;
   bool get isShuffle => _isShuffle;
-  RepeatMode get repeatMode => _repeatMode;
+  PlayerRepeatMode get repeatMode => _repeatMode;
   Song? get currentSong => _currentSong;
   bool get isPlaying => _player.playing;
   Duration? get sleepTimerRemaining =>
@@ -123,7 +123,7 @@ class AudioPlayerService {
       final shuffleIdx = _shuffleIndices.indexOf(_currentIndex);
       if (shuffleIdx < _shuffleIndices.length - 1) {
         _currentIndex = _shuffleIndices[shuffleIdx + 1];
-      } else if (_repeatMode == RepeatMode.all) {
+      } else if (_repeatMode == PlayerRepeatMode.all) {
         _generateShuffleIndices();
         _currentIndex = _shuffleIndices.first;
       } else {
@@ -132,7 +132,7 @@ class AudioPlayerService {
     } else {
       if (_currentIndex < _queue.length - 1) {
         _currentIndex++;
-      } else if (_repeatMode == RepeatMode.all) {
+      } else if (_repeatMode == PlayerRepeatMode.all) {
         _currentIndex = 0;
       } else {
         return;
@@ -191,16 +191,16 @@ class AudioPlayerService {
 
   void cycleRepeatMode() {
     switch (_repeatMode) {
-      case RepeatMode.none:
-        _repeatMode = RepeatMode.all;
+      case PlayerRepeatMode.none:
+        _repeatMode = PlayerRepeatMode.all;
         _player.setLoopMode(LoopMode.off);
         break;
-      case RepeatMode.all:
-        _repeatMode = RepeatMode.one;
+      case PlayerRepeatMode.all:
+        _repeatMode = PlayerRepeatMode.one;
         _player.setLoopMode(LoopMode.one);
         break;
-      case RepeatMode.one:
-        _repeatMode = RepeatMode.none;
+      case PlayerRepeatMode.one:
+        _repeatMode = PlayerRepeatMode.none;
         _player.setLoopMode(LoopMode.off);
         break;
     }
@@ -214,7 +214,7 @@ class AudioPlayerService {
 
   void _onSongCompleted() {
     _saveListeningHistory();
-    if (_repeatMode == RepeatMode.one) {
+    if (_repeatMode == PlayerRepeatMode.one) {
       _player.seek(Duration.zero);
       _player.play();
     } else {

@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'providers/music_provider.dart';
 import 'screens/splash_screen.dart';
 import 'theme/app_theme.dart';
+import 'screens/main_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -24,13 +25,13 @@ Future<void> main() async {
   ));
 
   // Background audio
-  await JustAudioBackground.init(
+  /* await JustAudioBackground.init(
     androidNotificationChannelId: 'com.smartmusicplayer.channel.audio',
     androidNotificationChannelName: 'Smart Music Player',
     androidNotificationOngoing: true,
     androidStopForegroundOnPause: true,
   );
-
+*/
   runApp(const SmartMusicPlayerApp());
 }
 
@@ -47,7 +48,7 @@ class SmartMusicPlayerApp extends StatelessWidget {
         title: 'Smart Music Player',
         debugShowCheckedModeBanner: false,
         theme: AppTheme.darkTheme,
-        home: const SplashScreen(),
+        home: const MainScreen(),
       ),
     );
   }
