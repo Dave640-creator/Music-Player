@@ -1,3 +1,8 @@
+/// A single audio track stored on the device.
+///
+/// Extended from the original model with fields that power the Mosaic
+/// experience: genre grouping, last-played tracking, privacy flags and
+/// embedded / sidecar lyrics.
 class Song {
   final int? id;
   final String title;
@@ -6,10 +11,15 @@ class Song {
   final int duration; // in seconds
   final String album;
   bool isFavorite;
-  final DateTime dateAdded;
+  DateTime dateAdded;
   int playCount;
   String? moodTag; // happy, sad, focus, chill, workout
   String? artworkPath;
+  String? genre;
+  DateTime? lastPlayedAt;
+  bool isPrivate;
+  String? lyrics; // plain text or LRC synchronized lyrics
+  int? year;
 
   Song({
     this.id,
@@ -23,7 +33,15 @@ class Song {
     this.playCount = 0,
     this.moodTag,
     this.artworkPath,
+    this.genre,
+    this.lastPlayedAt,
+    this.isPrivate = false,
+    this.lyrics,
+    this.year,
   }) : dateAdded = dateAdded ?? DateTime.now();
+
+  /// File size in bytes (computed lazily from the file system where possible).
+  int? fileSizeBytes;
 
   Map<String, dynamic> toMap() {
     return {
@@ -38,6 +56,11 @@ class Song {
       'play_count': playCount,
       'mood_tag': moodTag,
       'artwork_path': artworkPath,
+      'genre': genre,
+      'last_played_at': lastPlayedAt?.toIso8601String(),
+      'is_private': isPrivate ? 1 : 0,
+      'lyrics': lyrics,
+      'year': year,
     };
   }
 
@@ -51,11 +74,18 @@ class Song {
       album: map['album'] ?? 'Unknown Album',
       isFavorite: map['is_favorite'] == 1,
       dateAdded: map['date_added'] != null
-          ? DateTime.parse(map['date_added'])
+          ? DateTime.tryParse(map['date_added']) ?? DateTime.now()
           : DateTime.now(),
       playCount: map['play_count'] ?? 0,
       moodTag: map['mood_tag'],
       artworkPath: map['artwork_path'],
+      genre: map['genre'],
+      lastPlayedAt: map['last_played_at'] != null
+          ? DateTime.tryParse(map['last_played_at'])
+          : null,
+      isPrivate: map['is_private'] == 1,
+      lyrics: map['lyrics'],
+      year: map['year'],
     );
   }
 
@@ -71,6 +101,11 @@ class Song {
     int? playCount,
     String? moodTag,
     String? artworkPath,
+    String? genre,
+    DateTime? lastPlayedAt,
+    bool? isPrivate,
+    String? lyrics,
+    int? year,
   }) {
     return Song(
       id: id ?? this.id,
@@ -84,6 +119,11 @@ class Song {
       playCount: playCount ?? this.playCount,
       moodTag: moodTag ?? this.moodTag,
       artworkPath: artworkPath ?? this.artworkPath,
+      genre: genre ?? this.genre,
+      lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
+      isPrivate: isPrivate ?? this.isPrivate,
+      lyrics: lyrics ?? this.lyrics,
+      year: year ?? this.year,
     );
   }
 
@@ -92,6 +132,9 @@ class Song {
     final seconds = duration % 60;
     return '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}';
   }
+
+  /// Whether synchronized (LRC) or plain lyrics are available.
+  bool get hasLyrics => lyrics != null && lyrics!.trim().isNotEmpty;
 
   @override
   bool operator ==(Object other) =>

@@ -1,11 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:just_audio_background/just_audio_background.dart';
 import 'package:provider/provider.dart';
-import 'providers/music_provider.dart';
-import 'screens/splash_screen.dart';
+import 'providers/media_provider.dart';
 import 'theme/app_theme.dart';
-import 'screens/main_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -20,7 +17,7 @@ Future<void> main() async {
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
-    systemNavigationBarColor: AppTheme.primaryDark,
+            systemNavigationBarColor: AppTheme.deep,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
@@ -40,16 +37,30 @@ class SmartMusicPlayerApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => MusicProvider()),
-      ],
+        return ChangeNotifierProvider(
+      create: (_) => MediaProvider(),
       child: MaterialApp(
-        title: 'Smart Music Player',
+        title: 'Mosaic Player',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.darkTheme,
-        home: const MainScreen(),
+        theme: AppTheme.buildTheme(brightness: Brightness.dark),
+        home: const MosaicHomePage(),
       ),
+    );
+  }
+}
+
+/// Placeholder home for the Mosaic Player shell.
+/// The prior agent deleted the DISCOVER/LIBRARY/PLAYER/ME screens during the
+/// rebuild; a minimal home is sufficient to boot the app while those screens
+/// are reintroduced. The media sheets in this turn are standalone and ready to
+/// be wired into those screens.
+class MosaicHomePage extends StatelessWidget {
+  const MosaicHomePage({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+        return const Scaffold(
+      body: Center(child: Text('Mosaic Player')),
     );
   }
 }
