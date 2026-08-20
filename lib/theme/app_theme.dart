@@ -136,10 +136,7 @@ class AppTheme {
     _isDarkGlobal = isDark;
     final bg = isDark ? deep : lightDeep;
     final surfaceColor = isDark ? surface : lightSurface;
-    final raised = isDark ? surfaceRaised : Colors.white;
     final primaryText = isDark ? textPrimary : textLightPrimary;
-    final secondaryText = isDark ? textSecondary : textLightSecondary;
-    final borderColor = isDark ? line : lightLine;
 
     final scheme = ColorScheme.fromSeed(
       seedColor: accent,

@@ -28,11 +28,11 @@ class _HomeScreenState extends State<HomeScreen> {
   int _tab = 0;
     static const List<BottomNavigationBarItem> _destinations = [
     BottomNavigationBarItem(
-        icon: Icon(Icons.explore_rounded), label: Text('Discover')),
+        icon: Icon(Icons.explore_rounded), label: 'Discover'),
     BottomNavigationBarItem(
-        icon: Icon(Icons.library_music_rounded), label: Text('Library')),
+        icon: Icon(Icons.library_music_rounded), label: 'Library'),
     BottomNavigationBarItem(
-        icon: Icon(Icons.person_rounded), label: Text('Me')),
+        icon: Icon(Icons.person_rounded), label: 'Me'),
   ];
 
   @override

@@ -116,7 +116,9 @@ class MediaScannerService {
         if (extDirs != null) {
           for (final d in extDirs) {
             Directory root = d;
-            for (int i = 0; i < 4; i++) root = root.parent;
+            for (int i = 0; i < 4; i++) {
+              root = root.parent;
+            }
             if (!dirs.any((x) => x.path == root.path)) dirs.add(root);
           }
         }
