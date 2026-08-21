@@ -1,15 +1,28 @@
 import 'dart:io';
+import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:file_picker/file_picker.dart';
+import 'package:just_audio/just_audio.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:path_provider/path_provider.dart';
 import '../models/song.dart';
 import '../database/database_helper.dart';
+import '../models/library_scan_result.dart';
 
 class MusicScannerService {
   final DatabaseHelper _db = DatabaseHelper();
+  static const _mediaStoreChannel =
+      MethodChannel('smart_music_player/media_store');
 
   static const List<String> supportedFormats = [
-    'mp3', 'wav', 'm4a', 'aac', 'flac', 'ogg', 'opus', 'wma'
+    'mp3',
+    'wav',
+    'm4a',
+    'aac',
+    'flac',
+    'ogg',
+    'opus',
+    'wma'
   ];
 
   Future<bool> requestPermissions() async {
@@ -45,11 +58,20 @@ class MusicScannerService {
     return true;
   }
 
-  Future<List<Song>> scanDeviceStorage({
+  Future<LibraryScanResult> scanDeviceStorage({
     Function(int found, int total)? onProgress,
+    Function(LibraryScanResult result)? onResult,
   }) async {
     final hasPerms = await requestPermissions();
-    if (!hasPerms) return [];
+    if (!hasPerms) return const LibraryScanResult();
+
+    if (Platform.isAndroid) {
+      final mediaStoreResult = await _scanMediaStore(
+        onProgress: onProgress,
+        onResult: onResult,
+      );
+      if (mediaStoreResult != null) return mediaStoreResult;
+    }
 
     final List<File> audioFiles = [];
     final List<Directory> scanDirs = await _getScanDirectories();
@@ -65,18 +87,86 @@ class MusicScannerService {
     final uniqueFiles = audioFiles.where((f) => seen.add(f.path)).toList();
 
     final List<Song> songs = [];
+    var errors = 0;
     for (int i = 0; i < uniqueFiles.length; i++) {
       onProgress?.call(i + 1, uniqueFiles.length);
       try {
         final song = await _extractMetadata(uniqueFiles[i]);
         if (song != null) songs.add(song);
-      } catch (_) {}
+      } catch (_) {
+        debugPrint('Metadata scan failed for ${uniqueFiles[i].path}');
+        errors++;
+      }
     }
 
-    if (songs.isNotEmpty) {
-      await _db.insertSongBatch(songs);
+    final paths = uniqueFiles.map((file) => file.path).toSet();
+    final sync = await _db.insertSongBatch(songs);
+    final removed = await _db.removeMissingSongs(paths);
+    final result = sync.copyWith(
+      detected: uniqueFiles.length,
+      duplicates: audioFiles.length - uniqueFiles.length,
+      errors: errors,
+      removed: removed,
+    );
+    onResult?.call(result);
+    return result;
+  }
+
+  Future<LibraryScanResult?> _scanMediaStore({
+    Function(int found, int total)? onProgress,
+    Function(LibraryScanResult result)? onResult,
+  }) async {
+    try {
+      final rows = await _mediaStoreChannel.invokeMethod<List<dynamic>>(
+        'queryDeviceMusic',
+      );
+      if (rows == null || rows.isEmpty) return null;
+
+      final songs = <Song>[];
+      final paths = <String>{};
+      var errors = 0;
+      for (var i = 0; i < rows.length; i++) {
+        final row = Map<String, dynamic>.from(rows[i] as Map);
+        final path = row['path'] as String?;
+        if (path == null || !paths.add(path)) continue;
+        onProgress?.call(i + 1, rows.length);
+        try {
+          final title = (row['title'] as String?)?.trim();
+          final artist = (row['artist'] as String?)?.trim();
+          final album = (row['album'] as String?)?.trim();
+          songs.add(Song(
+            title: title?.isNotEmpty == true ? title! : 'Unknown',
+            artist: artist?.isNotEmpty == true ? artist! : 'Unknown Artist',
+            album: album?.isNotEmpty == true ? album! : 'Unknown Album',
+            albumArtist: (row['albumArtist'] as String?)?.trim(),
+            year: (row['year'] as num?)?.toInt(),
+            trackNumber: (row['trackNumber'] as num?)?.toInt(),
+            bitrate: (row['bitrate'] as num?)?.toInt(),
+            artworkPath: (row['artwork'] as String?)?.trim(),
+            filePath: path,
+            duration: ((row['duration'] as num?)?.round() ?? 0) ~/ 1000,
+            dateAdded: DateTime.fromMillisecondsSinceEpoch(
+              ((row['modified'] as num?)?.toInt() ?? 0) * 1000,
+            ),
+          ));
+        } catch (_) {
+          errors++;
+        }
+      }
+
+      final sync = await _db.insertSongBatch(songs);
+      final removed = await _db.removeMissingSongs(paths);
+      final result = sync.copyWith(
+        detected: paths.length,
+        errors: errors,
+        removed: removed,
+      );
+      onResult?.call(result);
+      return result;
+    } on PlatformException catch (error) {
+      debugPrint('MediaStore query failed: ${error.code}');
+      return null;
     }
-    return songs;
   }
 
   Future<List<Directory>> _getScanDirectories() async {
@@ -110,7 +200,9 @@ class MusicScannerService {
         final lib = await getLibraryDirectory();
         dirs.add(lib);
       }
-    } catch (_) {}
+    } catch (error) {
+      debugPrint('Unable to locate music directories: $error');
+    }
     return dirs;
   }
 
@@ -140,7 +232,9 @@ class MusicScannerService {
           }
         }
       }
-    } catch (_) {}
+    } catch (error) {
+      debugPrint('Unable to scan directory ${dir.path}: $error');
+    }
   }
 
   Future<Song?> _extractMetadata(File file) async {
@@ -163,18 +257,22 @@ class MusicScannerService {
       }
 
       // Use parent folder as album if not generic
-      final parentName =
-          file.parent.path.split(Platform.pathSeparator).last;
+      final parentName = file.parent.path.split(Platform.pathSeparator).last;
       const genericFolders = {
-        'music', 'downloads', 'mp3', 'audio', 'ringtones',
-        '0', 'emulated', 'storage'
+        'music',
+        'downloads',
+        'mp3',
+        'audio',
+        'ringtones',
+        '0',
+        'emulated',
+        'storage'
       };
       if (!genericFolders.contains(parentName.toLowerCase())) {
         album = parentName;
       }
 
-      final size = await file.length();
-      final duration = _estimateDuration(size);
+      final duration = await _readDuration(file);
 
       return Song(
         title: title.isEmpty ? 'Unknown' : title,
@@ -184,15 +282,25 @@ class MusicScannerService {
         duration: duration,
         dateAdded: stat.modified,
       );
-    } catch (_) {
+    } catch (error) {
+      debugPrint('Unable to read metadata for ${file.path}: $error');
       return null;
     }
   }
 
-  int _estimateDuration(int fileSizeBytes) {
-    // 128kbps MP3 = 16000 bytes/sec
-    if (fileSizeBytes <= 0) return 0;
-    return (fileSizeBytes / 16000).round().clamp(1, 3600);
+  Future<int> _readDuration(File file) async {
+    final player = AudioPlayer();
+    try {
+      final duration = await player.setFilePath(file.path);
+      return duration?.inSeconds ?? 0;
+    } catch (error) {
+      debugPrint('Duration metadata unavailable for ${file.path}: $error');
+      final size = await file.length();
+      if (size <= 0) return 0;
+      return (size / 16000).round().clamp(1, 3600);
+    } finally {
+      await player.dispose();
+    }
   }
 
   /// Manual file picker — BUG FIX: allowedExtensions must not be passed when type is audio
@@ -217,7 +325,8 @@ class MusicScannerService {
         await _db.insertSongBatch(songs);
       }
       return songs;
-    } catch (_) {
+    } catch (error) {
+      debugPrint('File picker import failed: $error');
       return [];
     }
   }

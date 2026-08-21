@@ -18,6 +18,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   List<Song> _topSongs = [];
   Map<String, int> _dailyStats = {};
   String _favoriteArtist = 'None yet';
+  int _todaySeconds = 0;
+  int _weekSeconds = 0;
+  int _monthSeconds = 0;
   bool _isLoading = true;
 
   @override
@@ -31,10 +34,15 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     setState(() => _isLoading = true);
 
     final provider = context.read<MusicProvider>();
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
     final results = await Future.wait([
       provider.getMostPlayedSongs(limit: 10),
       provider.getDailyStats(7),
       provider.getFavoriteArtist(),
+      provider.getListeningSecondsSince(today),
+      provider.getListeningSecondsSince(now.subtract(const Duration(days: 7))),
+      provider.getListeningSecondsSince(now.subtract(const Duration(days: 30))),
     ]);
 
     if (mounted) {
@@ -42,6 +50,9 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         _topSongs = results[0] as List<Song>;
         _dailyStats = results[1] as Map<String, int>;
         _favoriteArtist = results[2] as String;
+        _todaySeconds = results[3] as int;
+        _weekSeconds = results[4] as int;
+        _monthSeconds = results[5] as int;
         _isLoading = false;
       });
     }
@@ -95,30 +106,60 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   }
 
   Widget _buildStatsCards(UserStats stats) {
-    return Row(
+    return Column(
       children: [
-        _StatCard(
-          icon: Icons.access_time_rounded,
-          label: 'Listen Time',
-          value: stats.formattedTotalTime,
-          color: AppTheme.accent,
+        Row(
+          children: [
+            _StatCard(
+              icon: Icons.today_rounded,
+              label: 'Today',
+              value: _formatSeconds(_todaySeconds),
+              color: AppTheme.accent,
+            ),
+            const SizedBox(width: 10),
+            _StatCard(
+              icon: Icons.date_range_rounded,
+              label: 'This Week',
+              value: _formatSeconds(_weekSeconds),
+              color: AppTheme.accentSecondary,
+            ),
+            const SizedBox(width: 10),
+            _StatCard(
+              icon: Icons.calendar_month_rounded,
+              label: 'This Month',
+              value: _formatSeconds(_monthSeconds),
+              color: AppTheme.accentTertiary,
+            ),
+          ],
         ),
-        const SizedBox(width: 10),
-        _StatCard(
-          icon: Icons.music_note_rounded,
-          label: 'Songs Played',
-          value: '${stats.totalSongsPlayed}',
-          color: AppTheme.accentSecondary,
-        ),
-        const SizedBox(width: 10),
-        _StatCard(
-          icon: Icons.local_fire_department_rounded,
-          label: 'Day Streak',
-          value: '${stats.streakDays}d',
-          color: AppTheme.accentTertiary,
+        const SizedBox(height: 10),
+        Row(
+          children: [
+            _StatCard(
+              icon: Icons.music_note_rounded,
+              label: 'Songs Played',
+              value: '${stats.totalSongsPlayed}',
+              color: AppTheme.accentSecondary,
+            ),
+            const SizedBox(width: 10),
+            _StatCard(
+              icon: Icons.local_fire_department_rounded,
+              label: 'Day Streak',
+              value: '${stats.streakDays}d',
+              color: AppTheme.accentTertiary,
+            ),
+            const Spacer(),
+          ],
         ),
       ],
     );
+  }
+
+  String _formatSeconds(int seconds) {
+    final hours = seconds ~/ 3600;
+    final minutes = (seconds % 3600) ~/ 60;
+    if (hours > 0) return '${hours}h ${minutes}m';
+    return '${minutes}m';
   }
 
   Widget _buildFavoriteArtistCard() {
@@ -132,7 +173,8 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ],
         ),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppTheme.accentSecondary.withValues(alpha: 0.2)),
+        border:
+            Border.all(color: AppTheme.accentSecondary.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [

@@ -10,6 +10,11 @@ class Song {
   int playCount;
   String? moodTag; // happy, sad, focus, chill, workout
   String? artworkPath;
+  String? albumArtist;
+  String? genre;
+  int? year;
+  int? trackNumber;
+  int? bitrate;
 
   Song({
     this.id,
@@ -23,6 +28,11 @@ class Song {
     this.playCount = 0,
     this.moodTag,
     this.artworkPath,
+    this.albumArtist,
+    this.genre,
+    this.year,
+    this.trackNumber,
+    this.bitrate,
   }) : dateAdded = dateAdded ?? DateTime.now();
 
   Map<String, dynamic> toMap() {
@@ -38,6 +48,11 @@ class Song {
       'play_count': playCount,
       'mood_tag': moodTag,
       'artwork_path': artworkPath,
+      'album_artist': albumArtist,
+      'genre': genre,
+      'year': year,
+      'track_number': trackNumber,
+      'bitrate': bitrate,
     };
   }
 
@@ -56,6 +71,11 @@ class Song {
       playCount: map['play_count'] ?? 0,
       moodTag: map['mood_tag'],
       artworkPath: map['artwork_path'],
+      albumArtist: map['album_artist'],
+      genre: map['genre'],
+      year: map['year'],
+      trackNumber: map['track_number'],
+      bitrate: map['bitrate'],
     );
   }
 
@@ -71,6 +91,11 @@ class Song {
     int? playCount,
     String? moodTag,
     String? artworkPath,
+    String? albumArtist,
+    String? genre,
+    int? year,
+    int? trackNumber,
+    int? bitrate,
   }) {
     return Song(
       id: id ?? this.id,
@@ -84,6 +109,11 @@ class Song {
       playCount: playCount ?? this.playCount,
       moodTag: moodTag ?? this.moodTag,
       artworkPath: artworkPath ?? this.artworkPath,
+      albumArtist: albumArtist ?? this.albumArtist,
+      genre: genre ?? this.genre,
+      year: year ?? this.year,
+      trackNumber: trackNumber ?? this.trackNumber,
+      bitrate: bitrate ?? this.bitrate,
     );
   }
 

@@ -35,10 +35,9 @@ class _MainScreenState extends State<MainScreen> {
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => const NowPlayingScreen(),
         transitionsBuilder: (_, anim, __, child) => SlideTransition(
-          position: Tween<Offset>(
-                  begin: const Offset(0, 1), end: Offset.zero)
-              .animate(CurvedAnimation(
-                  parent: anim, curve: Curves.easeOutCubic)),
+          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+              .animate(
+                  CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
           child: child,
         ),
       ),
@@ -67,18 +66,37 @@ class _MainScreenState extends State<MainScreen> {
                   if (song == null) return const SizedBox.shrink();
 
                   final isPlaying = snapshot.data?.playing ?? false;
-                  return MiniPlayer(
-                    song: song,
-                    isPlaying: isPlaying,
-                    onTap: _openNowPlaying,
-                    onPlayPause: () {
-                      if (isPlaying) {
-                        audioService.pause();
-                      } else {
-                        audioService.play();
-                      }
+                  return StreamBuilder<Duration?>(
+                    stream: audioService.durationStream,
+                    builder: (context, durationSnapshot) {
+                      return StreamBuilder<Duration>(
+                        stream: audioService.positionStream,
+                        builder: (context, positionSnapshot) {
+                          final duration = durationSnapshot.data;
+                          final position =
+                              positionSnapshot.data ?? Duration.zero;
+                          final progress =
+                              duration == null || duration.inMilliseconds == 0
+                                  ? 0.0
+                                  : position.inMilliseconds /
+                                      duration.inMilliseconds;
+                          return MiniPlayer(
+                            song: song,
+                            isPlaying: isPlaying,
+                            progress: progress,
+                            onTap: _openNowPlaying,
+                            onPlayPause: () {
+                              if (isPlaying) {
+                                audioService.pause();
+                              } else {
+                                audioService.play();
+                              }
+                            },
+                            onNext: () => audioService.next(),
+                          );
+                        },
+                      );
                     },
-                    onNext: () => audioService.next(),
                   );
                 },
               ),
@@ -87,7 +105,8 @@ class _MainScreenState extends State<MainScreen> {
                 decoration: BoxDecoration(
                   color: AppTheme.surfaceDark,
                   border: Border(
-                    top: BorderSide(color: Colors.white.withValues(alpha: 0.06)),
+                    top:
+                        BorderSide(color: Colors.white.withValues(alpha: 0.06)),
                   ),
                 ),
                 child: NavigationBar(
@@ -114,20 +133,20 @@ class _MainScreenState extends State<MainScreen> {
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.favorite_outline_rounded),
-                      selectedIcon: Icon(Icons.favorite_rounded,
-                          color: AppTheme.accent),
+                      selectedIcon:
+                          Icon(Icons.favorite_rounded, color: AppTheme.accent),
                       label: 'Favorites',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.bar_chart_outlined),
-                      selectedIcon: Icon(Icons.bar_chart_rounded,
-                          color: AppTheme.accent),
+                      selectedIcon:
+                          Icon(Icons.bar_chart_rounded, color: AppTheme.accent),
                       label: 'Analytics',
                     ),
                     NavigationDestination(
                       icon: Icon(Icons.settings_outlined),
-                      selectedIcon: Icon(Icons.settings_rounded,
-                          color: AppTheme.accent),
+                      selectedIcon:
+                          Icon(Icons.settings_rounded, color: AppTheme.accent),
                       label: 'Settings',
                     ),
                   ],

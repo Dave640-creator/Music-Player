@@ -28,10 +28,9 @@ class _HomeScreenState extends State<HomeScreen> {
       PageRouteBuilder(
         pageBuilder: (_, __, ___) => const NowPlayingScreen(),
         transitionsBuilder: (_, anim, __, child) => SlideTransition(
-          position: Tween<Offset>(
-                  begin: const Offset(0, 1), end: Offset.zero)
-              .animate(CurvedAnimation(
-                  parent: anim, curve: Curves.easeOutCubic)),
+          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+              .animate(
+                  CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
           child: child,
         ),
       ),
@@ -58,6 +57,8 @@ class _HomeScreenState extends State<HomeScreen> {
             children: [
               _buildSearchBar(provider),
               _buildSortRow(provider),
+              if (provider.searchQuery.isEmpty && provider.rawSongs.isNotEmpty)
+                _buildForYou(provider),
               if (provider.isScanning) _buildScanProgress(provider),
               if (provider.isLoading && !provider.isScanning)
                 const Expanded(
@@ -193,6 +194,104 @@ class _HomeScreenState extends State<HomeScreen> {
               ),
             ),
           ],
+          if (provider.scanResult.detected > 0) ...[
+            const SizedBox(height: 8),
+            Text(
+              '${provider.scanResult.detected} detected  |  '
+              '${provider.scanResult.imported} new  |  '
+              '${provider.scanResult.updated} updated  |  '
+              '${provider.scanResult.alreadyImported} unchanged',
+              style:
+                  const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildForYou(MusicProvider provider) {
+    final songs = provider.getRecommendedSongs();
+    if (songs.isEmpty) return const SizedBox.shrink();
+
+    return SizedBox(
+      height: 126,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: Text(
+              'For You',
+              style: TextStyle(
+                color: AppTheme.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+          Expanded(
+            child: ListView.separated(
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              scrollDirection: Axis.horizontal,
+              itemCount: songs.length,
+              separatorBuilder: (_, __) => const SizedBox(width: 10),
+              itemBuilder: (context, index) {
+                final song = songs[index];
+                return SizedBox(
+                  width: 150,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () {
+                      provider.playSong(song, queue: songs);
+                      _openNowPlaying();
+                    },
+                    child: Ink(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: AppTheme.cardDark,
+                        borderRadius: BorderRadius.circular(12),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(
+                            song.isFavorite
+                                ? Icons.favorite_rounded
+                                : Icons.auto_awesome_rounded,
+                            color: song.isFavorite
+                                ? AppTheme.accentSecondary
+                                : AppTheme.accent,
+                            size: 18,
+                          ),
+                          const Spacer(),
+                          Text(
+                            song.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.textPrimary,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                          Text(
+                            song.artist,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: AppTheme.textSecondary,
+                              fontSize: 11,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
         ],
       ),
     );
@@ -233,8 +332,8 @@ class _HomeScreenState extends State<HomeScreen> {
               hasQuery
                   ? 'Try a different search term'
                   : 'Tap Import to scan your device\nor pick music files manually',
-              style: const TextStyle(
-                  color: AppTheme.textSecondary, fontSize: 14),
+              style:
+                  const TextStyle(color: AppTheme.textSecondary, fontSize: 14),
               textAlign: TextAlign.center,
             ),
             if (!hasQuery) ...[
@@ -374,8 +473,8 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           const Divider(color: Colors.white10),
           ListTile(
-            leading: const Icon(Icons.playlist_add_rounded,
-                color: AppTheme.accent),
+            leading:
+                const Icon(Icons.playlist_add_rounded, color: AppTheme.accent),
             title: const Text('Add to Playlist'),
             onTap: () {
               Navigator.pop(ctx);
@@ -411,8 +510,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  void _confirmDelete(
-      BuildContext context, Song song, MusicProvider provider) {
+  void _confirmDelete(BuildContext context, Song song, MusicProvider provider) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -427,14 +525,12 @@ class _HomeScreenState extends State<HomeScreen> {
                 style: TextStyle(color: AppTheme.textSecondary)),
           ),
           ElevatedButton(
-            style:
-                ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.redAccent),
             onPressed: () {
               Navigator.pop(ctx);
               provider.deleteSong(song);
             },
-            child: const Text('Remove',
-                style: TextStyle(color: Colors.white)),
+            child: const Text('Remove', style: TextStyle(color: Colors.white)),
           ),
         ],
       ),
@@ -459,8 +555,7 @@ class _HomeScreenState extends State<HomeScreen> {
             height: 4,
             margin: const EdgeInsets.only(top: 12, bottom: 4),
             decoration: BoxDecoration(
-                color: Colors.white12,
-                borderRadius: BorderRadius.circular(2)),
+                color: Colors.white12, borderRadius: BorderRadius.circular(2)),
           ),
           const Padding(
             padding: EdgeInsets.all(16),
@@ -527,8 +622,7 @@ class _HomeScreenState extends State<HomeScreen> {
             height: 4,
             margin: const EdgeInsets.only(top: 12, bottom: 4),
             decoration: BoxDecoration(
-                color: Colors.white12,
-                borderRadius: BorderRadius.circular(2)),
+                color: Colors.white12, borderRadius: BorderRadius.circular(2)),
           ),
           const Padding(
             padding: EdgeInsets.all(16),
@@ -620,8 +714,7 @@ class _HomeScreenState extends State<HomeScreen> {
             height: 4,
             margin: const EdgeInsets.only(top: 12, bottom: 8),
             decoration: BoxDecoration(
-                color: Colors.white12,
-                borderRadius: BorderRadius.circular(2)),
+                color: Colors.white12, borderRadius: BorderRadius.circular(2)),
           ),
           const Padding(
             padding: EdgeInsets.symmetric(vertical: 8),
@@ -691,8 +784,7 @@ class _HomeScreenState extends State<HomeScreen> {
           style: const TextStyle(
               color: AppTheme.textPrimary, fontWeight: FontWeight.w500)),
       subtitle: Text(subtitle,
-          style:
-              const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
       onTap: onTap,
     );
   }

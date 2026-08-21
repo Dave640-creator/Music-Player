@@ -26,7 +26,8 @@ class SettingsScreen extends StatelessWidget {
                   icon: Icons.search_rounded,
                   color: AppTheme.accent,
                   title: 'Scan Device',
-                  subtitle: '$songCount song${songCount != 1 ? 's' : ''} in library',
+                  subtitle:
+                      '$songCount song${songCount != 1 ? 's' : ''} in library',
                   onTap: () => provider.scanDevice(),
                 ),
                 _tile(
@@ -41,18 +42,15 @@ class SettingsScreen extends StatelessWidget {
                         content: Text(songs.isEmpty
                             ? 'No files imported'
                             : '${songs.length} songs added'),
-                        backgroundColor: songs.isEmpty
-                            ? AppTheme.cardDark
-                            : AppTheme.accent,
+                        backgroundColor:
+                            songs.isEmpty ? AppTheme.cardDark : AppTheme.accent,
                         behavior: SnackBarBehavior.floating,
                       ));
                     }
                   },
                 ),
               ]),
-
               const SizedBox(height: 16),
-
               _section('Smart Playlists', [
                 _tile(
                   icon: Icons.auto_fix_high_rounded,
@@ -73,9 +71,7 @@ class SettingsScreen extends StatelessWidget {
                   },
                 ),
               ]),
-
               const SizedBox(height: 16),
-
               _section('Organization', [
                 _tile(
                   icon: Icons.people_alt_rounded,
@@ -100,9 +96,7 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => _showDuplicates(context, provider),
                 ),
               ]),
-
               const SizedBox(height: 16),
-
               _section('Mood Player', [
                 _tile(
                   icon: Icons.mood_rounded,
@@ -112,9 +106,7 @@ class SettingsScreen extends StatelessWidget {
                   onTap: () => _showMoodPlayer(context, provider),
                 ),
               ]),
-
               const SizedBox(height: 16),
-
               _section('About', [
                 _tile(
                   icon: Icons.info_outline_rounded,
@@ -127,12 +119,10 @@ class SettingsScreen extends StatelessWidget {
                   icon: Icons.storage_rounded,
                   color: AppTheme.textSecondary,
                   title: 'Library Stats',
-                  subtitle:
-                      '$songCount songs  •  $playlistCount playlists',
+                  subtitle: '$songCount songs  •  $playlistCount playlists',
                   onTap: null,
                 ),
               ]),
-
               const SizedBox(height: 80),
             ],
           );
@@ -191,8 +181,7 @@ class SettingsScreen extends StatelessWidget {
               fontSize: 14,
               fontWeight: FontWeight.w500)),
       subtitle: Text(subtitle,
-          style: const TextStyle(
-              color: AppTheme.textSecondary, fontSize: 12)),
+          style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
       trailing: onTap != null
           ? const Icon(Icons.chevron_right_rounded,
               color: AppTheme.textSecondary)
@@ -299,9 +288,7 @@ class SettingsScreen extends StatelessWidget {
                             ),
                             child: Center(
                               child: Text(
-                                key.isNotEmpty
-                                    ? key[0].toUpperCase()
-                                    : '?',
+                                key.isNotEmpty ? key[0].toUpperCase() : '?',
                                 style: const TextStyle(
                                     color: Colors.white,
                                     fontWeight: FontWeight.bold,
@@ -337,8 +324,7 @@ class SettingsScreen extends StatelessWidget {
     );
   }
 
-  void _showDuplicates(
-      BuildContext context, MusicProvider provider) async {
+  void _showDuplicates(BuildContext context, MusicProvider provider) async {
     final dups = await provider.findDuplicates();
     if (!context.mounted) return;
 
@@ -386,8 +372,7 @@ class SettingsScreen extends StatelessWidget {
                           SizedBox(height: 12),
                           Text('Your library is clean!',
                               style: TextStyle(
-                                  color: AppTheme.textSecondary,
-                                  fontSize: 16)),
+                                  color: AppTheme.textSecondary, fontSize: 16)),
                         ],
                       ),
                     ),
@@ -400,12 +385,39 @@ class SettingsScreen extends StatelessWidget {
                         song: dups[i],
                         onTap: () {},
                         onMore: () {
-                          provider.deleteSong(dups[i]);
-                          Navigator.pop(ctx);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text('"${dups[i].title}" removed'),
-                              behavior: SnackBarBehavior.floating,
+                          showDialog<void>(
+                            context: context,
+                            builder: (dialogContext) => AlertDialog(
+                              backgroundColor: AppTheme.surfaceDark,
+                              title: const Text('Remove duplicate?'),
+                              content: Text(
+                                'Remove "${dups[i].title}" from the library? '
+                                'The file on your device will not be deleted.',
+                              ),
+                              actions: [
+                                TextButton(
+                                  onPressed: () => Navigator.pop(dialogContext),
+                                  child: const Text('Cancel'),
+                                ),
+                                FilledButton(
+                                  onPressed: () async {
+                                    Navigator.pop(dialogContext);
+                                    await provider.deleteSong(dups[i]);
+                                    if (ctx.mounted) Navigator.pop(ctx);
+                                    if (context.mounted) {
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                        SnackBar(
+                                          content: Text(
+                                              '"${dups[i].title}" removed'),
+                                          behavior: SnackBarBehavior.floating,
+                                        ),
+                                      );
+                                    }
+                                  },
+                                  child: const Text('Remove'),
+                                ),
+                              ],
                             ),
                           );
                         },
@@ -441,8 +453,7 @@ class SettingsScreen extends StatelessWidget {
             height: 4,
             margin: const EdgeInsets.only(top: 12, bottom: 4),
             decoration: BoxDecoration(
-                color: Colors.white12,
-                borderRadius: BorderRadius.circular(2)),
+                color: Colors.white12, borderRadius: BorderRadius.circular(2)),
           ),
           const Padding(
             padding: EdgeInsets.all(16),
@@ -468,14 +479,12 @@ class SettingsScreen extends StatelessWidget {
                 ),
               ),
               title: Text(m['label']!.split(' ').last,
-                  style: TextStyle(
-                      color: color, fontWeight: FontWeight.w600)),
+                  style: TextStyle(color: color, fontWeight: FontWeight.w600)),
               subtitle: Text(m['desc']!,
                   style: const TextStyle(
                       color: AppTheme.textSecondary, fontSize: 12)),
               onTap: () async {
-                final songs =
-                    await provider.getSongsByMood(m['key']!);
+                final songs = await provider.getSongsByMood(m['key']!);
                 if (!ctx.mounted) return;
                 Navigator.pop(ctx);
                 if (songs.isEmpty) {

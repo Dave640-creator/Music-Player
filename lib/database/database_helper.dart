@@ -3,6 +3,7 @@ import 'package:path/path.dart';
 import '../models/song.dart';
 import '../models/playlist.dart';
 import '../models/user_stats.dart';
+import '../models/library_scan_result.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -21,8 +22,9 @@ class DatabaseHelper {
     final path = join(dbPath, 'smart_music_player_v2.db');
     return await openDatabase(
       path,
-      version: 1,
+      version: 2,
       onCreate: _createTables,
+      onUpgrade: _onUpgrade,
       onConfigure: (db) async {
         // Enable FK support
         await db.execute('PRAGMA foreign_keys = ON');
@@ -43,7 +45,12 @@ class DatabaseHelper {
         date_added TEXT NOT NULL,
         play_count INTEGER NOT NULL DEFAULT 0,
         mood_tag TEXT,
-        artwork_path TEXT
+        artwork_path TEXT,
+        album_artist TEXT,
+        genre TEXT,
+        year INTEGER,
+        track_number INTEGER,
+        bitrate INTEGER
       )
     ''');
 
@@ -101,8 +108,8 @@ class DatabaseHelper {
     // Create indexes for common queries
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist)');
-    await db.execute(
-        'CREATE INDEX IF NOT EXISTS idx_songs_album ON songs(album)');
+    await db
+        .execute('CREATE INDEX IF NOT EXISTS idx_songs_album ON songs(album)');
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_songs_play_count ON songs(play_count DESC)');
     await db.execute(
@@ -114,6 +121,16 @@ class DatabaseHelper {
       'total_songs_played': 0,
       'streak_days': 0,
     });
+  }
+
+  Future<void> _onUpgrade(Database db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await db.execute('ALTER TABLE songs ADD COLUMN album_artist TEXT');
+      await db.execute('ALTER TABLE songs ADD COLUMN genre TEXT');
+      await db.execute('ALTER TABLE songs ADD COLUMN year INTEGER');
+      await db.execute('ALTER TABLE songs ADD COLUMN track_number INTEGER');
+      await db.execute('ALTER TABLE songs ADD COLUMN bitrate INTEGER');
+    }
   }
 
   // ─────────────── SONGS ───────────────
@@ -128,7 +145,104 @@ class DatabaseHelper {
     }
   }
 
-  Future<void> insertSongBatch(List<Song> songs) async {
+  Future<LibraryScanResult> insertSongBatch(List<Song> songs) async {
+    if (songs.isEmpty) return const LibraryScanResult();
+    final db = await database;
+    var imported = 0;
+    var updated = 0;
+    var alreadyImported = 0;
+    final seenPaths = <String>{};
+
+    await db.transaction((txn) async {
+      for (final song in songs) {
+        if (!seenPaths.add(song.filePath)) continue;
+        final existing = await txn.query(
+          'songs',
+          columns: [
+            'id',
+            'title',
+            'artist',
+            'album',
+            'duration',
+            'album_artist',
+            'genre',
+            'year',
+            'track_number',
+            'bitrate',
+            'date_added',
+          ],
+          where: 'file_path = ?',
+          whereArgs: [song.filePath],
+          limit: 1,
+        );
+
+        if (existing.isEmpty) {
+          await txn.insert('songs', song.toMap());
+          imported++;
+          continue;
+        }
+
+        final row = existing.first;
+        final changed = row['title'] != song.title ||
+            row['artist'] != song.artist ||
+            row['album'] != song.album ||
+            row['duration'] != song.duration ||
+            row['album_artist'] != song.albumArtist ||
+            row['genre'] != song.genre ||
+            row['year'] != song.year ||
+            row['track_number'] != song.trackNumber ||
+            row['bitrate'] != song.bitrate;
+        if (changed) {
+          await txn.update(
+            'songs',
+            {
+              'title': song.title,
+              'artist': song.artist,
+              'album': song.album,
+              'duration': song.duration,
+              'album_artist': song.albumArtist,
+              'genre': song.genre,
+              'year': song.year,
+              'track_number': song.trackNumber,
+              'bitrate': song.bitrate,
+            },
+            where: 'id = ?',
+            whereArgs: [row['id']],
+          );
+          updated++;
+        } else {
+          alreadyImported++;
+        }
+      }
+    });
+
+    return LibraryScanResult(
+      detected: seenPaths.length,
+      imported: imported,
+      updated: updated,
+      alreadyImported: alreadyImported,
+    );
+  }
+
+  Future<int> removeMissingSongs(Set<String> existingPaths) async {
+    if (existingPaths.isEmpty) return 0;
+    final db = await database;
+    final rows = await db.query('songs', columns: ['id', 'file_path']);
+    final missingIds = rows
+        .where((row) => !existingPaths.contains(row['file_path'] as String))
+        .map((row) => row['id'] as int)
+        .toList();
+    if (missingIds.isEmpty) return 0;
+
+    await db.transaction((txn) async {
+      for (final id in missingIds) {
+        await txn.delete('songs', where: 'id = ?', whereArgs: [id]);
+      }
+    });
+    return missingIds.length;
+  }
+
+  Future<void> insertSongsLegacy(List<Song> songs) async {
     if (songs.isEmpty) return;
     final db = await database;
     final batch = db.batch();
@@ -158,31 +272,29 @@ class DatabaseHelper {
 
   Future<List<Song>> getFavoriteSongs() async {
     final db = await database;
-    final rows = await db.query('songs',
-        where: 'is_favorite = 1', orderBy: 'title ASC');
+    final rows =
+        await db.query('songs', where: 'is_favorite = 1', orderBy: 'title ASC');
     return rows.map(Song.fromMap).toList();
   }
 
   Future<List<Song>> getMostPlayedSongs({int limit = 10}) async {
     final db = await database;
     final rows = await db.query('songs',
-        where: 'play_count > 0',
-        orderBy: 'play_count DESC',
-        limit: limit);
+        where: 'play_count > 0', orderBy: 'play_count DESC', limit: limit);
     return rows.map(Song.fromMap).toList();
   }
 
   Future<List<Song>> getSongsByMood(String mood) async {
     final db = await database;
-    final rows = await db
-        .query('songs', where: 'mood_tag = ?', whereArgs: [mood]);
+    final rows =
+        await db.query('songs', where: 'mood_tag = ?', whereArgs: [mood]);
     return rows.map(Song.fromMap).toList();
   }
 
   Future<void> updateSong(Song song) async {
     final db = await database;
-    await db.update('songs', song.toMap(),
-        where: 'id = ?', whereArgs: [song.id]);
+    await db
+        .update('songs', song.toMap(), where: 'id = ?', whereArgs: [song.id]);
   }
 
   Future<void> toggleFavorite(int songId, bool isFavorite) async {
@@ -194,8 +306,7 @@ class DatabaseHelper {
   Future<void> incrementPlayCount(int songId) async {
     final db = await database;
     await db.rawUpdate(
-        'UPDATE songs SET play_count = play_count + 1 WHERE id = ?',
-        [songId]);
+        'UPDATE songs SET play_count = play_count + 1 WHERE id = ?', [songId]);
   }
 
   Future<void> updateMoodTag(int songId, String? mood) async {
@@ -227,11 +338,19 @@ class DatabaseHelper {
   Future<List<Song>> findDuplicates() async {
     final db = await database;
     final rows = await db.rawQuery('''
-      SELECT * FROM songs
-      WHERE title IN (
-        SELECT title FROM songs GROUP BY LOWER(title) HAVING COUNT(*) > 1
-      )
-      ORDER BY LOWER(title), date_added ASC
+      SELECT s.*
+      FROM songs s
+      INNER JOIN (
+        SELECT LOWER(TRIM(title)) AS title_key,
+               LOWER(TRIM(artist)) AS artist_key,
+               LOWER(TRIM(album)) AS album_key
+        FROM songs
+        GROUP BY title_key, artist_key, album_key
+        HAVING COUNT(*) > 1
+      ) d ON LOWER(TRIM(s.title)) = d.title_key
+         AND LOWER(TRIM(s.artist)) = d.artist_key
+         AND LOWER(TRIM(s.album)) = d.album_key
+      ORDER BY LOWER(s.title), LOWER(s.artist), s.date_added ASC
     ''');
     return rows.map(Song.fromMap).toList();
   }
@@ -256,8 +375,7 @@ class DatabaseHelper {
 
   Future<List<Playlist>> getAllPlaylists() async {
     final db = await database;
-    final rows =
-        await db.query('playlists', orderBy: 'created_at DESC');
+    final rows = await db.query('playlists', orderBy: 'created_at DESC');
     final playlists = rows.map(Playlist.fromMap).toList();
     for (final p in playlists) {
       p.songs = await getPlaylistSongs(p.id!);
@@ -276,6 +394,12 @@ class DatabaseHelper {
       {'playlist_id': playlistId, 'song_id': songId, 'position': pos},
       conflictAlgorithm: ConflictAlgorithm.ignore,
     );
+  }
+
+  Future<void> clearPlaylistSongs(int playlistId) async {
+    final db = await database;
+    await db.delete('playlist_songs',
+        where: 'playlist_id = ?', whereArgs: [playlistId]);
   }
 
   Future<void> removeSongFromPlaylist(int playlistId, int songId) async {
@@ -304,8 +428,7 @@ class DatabaseHelper {
 
   Future<void> deletePlaylist(int playlistId) async {
     final db = await database;
-    await db.delete('playlists',
-        where: 'id = ?', whereArgs: [playlistId]);
+    await db.delete('playlists', where: 'id = ?', whereArgs: [playlistId]);
   }
 
   Future<int> getPlaylistCount() async {
@@ -322,8 +445,7 @@ class DatabaseHelper {
     await db.insert('listening_history', h.toMap());
   }
 
-  Future<List<ListeningHistory>> getListeningHistory(
-      {int limit = 100}) async {
+  Future<List<ListeningHistory>> getListeningHistory({int limit = 100}) async {
     final db = await database;
     final rows = await db.query('listening_history',
         orderBy: 'played_at DESC', limit: limit);
@@ -332,9 +454,8 @@ class DatabaseHelper {
 
   Future<Map<String, int>> getDailyListeningStats(int days) async {
     final db = await database;
-    final cutoff = DateTime.now()
-        .subtract(Duration(days: days))
-        .toIso8601String();
+    final cutoff =
+        DateTime.now().subtract(Duration(days: days)).toIso8601String();
     final rows = await db.rawQuery('''
       SELECT DATE(played_at) as day, SUM(duration_played) as total
       FROM listening_history
@@ -348,6 +469,16 @@ class DatabaseHelper {
       result[r['day'] as String] = (r['total'] as int?) ?? 0;
     }
     return result;
+  }
+
+  Future<int> getListeningSecondsSince(DateTime since) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT COALESCE(SUM(duration_played), 0) AS total
+      FROM listening_history
+      WHERE played_at >= ?
+    ''', [since.toIso8601String()]);
+    return (rows.first['total'] as num?)?.toInt() ?? 0;
   }
 
   // ─────────────── USER STATS ───────────────
@@ -394,13 +525,12 @@ class DatabaseHelper {
 
   Future<Set<BadgeType>> getUnlockedBadges() async {
     final db = await database;
-    final rows =
-        await db.query('badges', where: 'is_unlocked = 1');
+    final rows = await db.query('badges', where: 'is_unlocked = 1');
     final result = <BadgeType>{};
     for (final r in rows) {
       try {
-        result.add(BadgeType.values
-            .firstWhere((e) => e.name == r['badge_type']));
+        result
+            .add(BadgeType.values.firstWhere((e) => e.name == r['badge_type']));
       } catch (_) {}
     }
     return result;

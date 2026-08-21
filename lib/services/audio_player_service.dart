@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
 import '../models/song.dart';
@@ -24,10 +25,12 @@ class AudioPlayerService {
   int _skipAttempts = 0;
 
   Timer? _sleepTimer;
+  Timer? _sleepFadeTimer;
   DateTime? _sleepTimerEnd;
 
   Song? _currentSong;
   DateTime? _playStartTime;
+  int _sessionListenedSeconds = 0;
 
   final StreamController<Song?> _currentSongController =
       StreamController<Song?>.broadcast();
@@ -70,13 +73,48 @@ class AudioPlayerService {
     await _playCurrentSong();
   }
 
+  Future<void> addToQueue(Song song) async {
+    if (_queue.any((queuedSong) => queuedSong.id == song.id)) return;
+    _queue = [..._queue, song];
+  }
+
+  Future<void> removeFromQueue(int index) async {
+    if (index < 0 || index >= _queue.length || index == _currentIndex) {
+      return;
+    }
+    _queue.removeAt(index);
+    if (index < _currentIndex) _currentIndex--;
+    if (_currentIndex >= _queue.length) _currentIndex = _queue.length - 1;
+  }
+
+  void reorderQueue(int oldIndex, int newIndex) {
+    if (oldIndex < 0 || oldIndex >= _queue.length) return;
+    if (newIndex > oldIndex) newIndex--;
+    if (newIndex < 0 || newIndex >= _queue.length) return;
+    if (oldIndex == _currentIndex || newIndex == _currentIndex) return;
+
+    final song = _queue.removeAt(oldIndex);
+    _queue.insert(newIndex, song);
+  }
+
+  Future<void> clearQueue() async {
+    await _finishListeningSession();
+    await _player.stop();
+    _queue = [];
+    _currentIndex = 0;
+    _currentSong = null;
+    _currentSongController.add(null);
+  }
+
   Future<void> _playCurrentSong() async {
     if (_queue.isEmpty) return;
 
+    await _finishListeningSession();
     final song = _queue[_currentIndex];
     _currentSong = song;
     _currentSongController.add(song);
-    _playStartTime = DateTime.now();
+    _playStartTime = null;
+    _sessionListenedSeconds = 0;
 
     try {
       final audioSource = AudioSource.uri(
@@ -86,16 +124,22 @@ class AudioPlayerService {
           title: song.title,
           artist: song.artist,
           album: song.album,
-          artUri: song.artworkPath != null ? Uri.file(song.artworkPath!) : null,
+          artUri: song.artworkPath == null
+              ? null
+              : song.artworkPath!.startsWith('content://')
+                  ? Uri.parse(song.artworkPath!)
+                  : Uri.file(song.artworkPath!),
         ),
       );
 
       await _player.setAudioSource(audioSource);
       await _player.play();
+      _beginListeningSession();
       // BUG FIX: reset skip counter on successful play
       _skipAttempts = 0;
-      await _db.incrementPlayCount(song.id!);
+      if (song.id != null) await _db.incrementPlayCount(song.id!);
     } catch (e) {
+      debugPrint('Playback failed for ${song.filePath}: $e');
       // BUG FIX: cap skip attempts to prevent infinite loop when all files broken
       _skipAttempts++;
       if (_skipAttempts < _queue.length) {
@@ -108,14 +152,24 @@ class AudioPlayerService {
 
   Future<void> play() async {
     await _player.play();
+    _beginListeningSession();
   }
 
   Future<void> pause() async {
     await _player.pause();
-    await _saveListeningHistory();
+    await _finishListeningSession();
   }
 
-  Future<void> resume() async => await _player.play();
+  Future<void> resume() async {
+    await _player.play();
+    _beginListeningSession();
+  }
+
+  void _beginListeningSession() {
+    if (_currentSong != null && _playStartTime == null) {
+      _playStartTime = DateTime.now();
+    }
+  }
 
   // BUG FIX: internal skip used during error recovery (doesn't save history)
   Future<void> _skipToNext() async {
@@ -142,16 +196,17 @@ class AudioPlayerService {
   }
 
   Future<void> next() async {
-    await _saveListeningHistory();
+    await _finishListeningSession();
     _skipAttempts = 0;
     await _skipToNext();
   }
 
   Future<void> previous() async {
-    await _saveListeningHistory();
+    await _finishListeningSession();
 
     if (_player.position.inSeconds > 3) {
       await _player.seek(Duration.zero);
+      _beginListeningSession();
       return;
     }
 
@@ -213,18 +268,29 @@ class AudioPlayerService {
   }
 
   void _onSongCompleted() {
-    _saveListeningHistory();
+    _handleSongCompleted();
+  }
+
+  Future<void> _handleSongCompleted() async {
+    await _finishListeningSession();
     if (_repeatMode == PlayerRepeatMode.one) {
-      _player.seek(Duration.zero);
-      _player.play();
+      await _player.seek(Duration.zero);
+      await _player.play();
+      _beginListeningSession();
     } else {
-      next();
+      await _skipToNext();
     }
   }
 
-  Future<void> _saveListeningHistory() async {
-    if (_currentSong?.id == null || _playStartTime == null) return;
-    final durationPlayed = DateTime.now().difference(_playStartTime!).inSeconds;
+  Future<void> _finishListeningSession() async {
+    if (_currentSong?.id == null) return;
+    if (_playStartTime != null) {
+      _sessionListenedSeconds +=
+          DateTime.now().difference(_playStartTime!).inSeconds;
+    }
+    _playStartTime = null;
+
+    final durationPlayed = _sessionListenedSeconds;
     if (durationPlayed < 5) return;
 
     await _db.addListeningHistory(ListeningHistory(
@@ -253,18 +319,18 @@ class AudioPlayerService {
     }
     stats.lastPlayedDate = today;
     await _db.updateUserStats(stats);
-    _playStartTime = DateTime.now();
+    _sessionListenedSeconds = 0;
   }
 
   void setSleepTimer(int minutes) {
-    _sleepTimer?.cancel();
+    _cancelSleepTimers();
     _sleepTimerEnd = DateTime.now().add(Duration(minutes: minutes));
 
     // BUG FIX: fade starts 30s before end, not during entire timer
     final fadeDelay = Duration(minutes: minutes) - const Duration(seconds: 33);
 
     if (fadeDelay.inSeconds > 0) {
-      Timer(fadeDelay, () async {
+      _sleepFadeTimer = Timer(fadeDelay, () async {
         if (_sleepTimerEnd == null) return;
         for (int i = 10; i >= 0; i--) {
           if (_sleepTimerEnd == null) return;
@@ -278,19 +344,26 @@ class AudioPlayerService {
       await _player.pause();
       await _player.setVolume(1.0);
       _sleepTimerEnd = null;
+      _sleepFadeTimer = null;
     });
   }
 
   void cancelSleepTimer() {
-    _sleepTimer?.cancel();
-    _sleepTimer = null;
+    _cancelSleepTimers();
     _sleepTimerEnd = null;
     _player.setVolume(1.0);
   }
 
-  Future<void> disposeService() async {
-    await _saveListeningHistory();
+  void _cancelSleepTimers() {
     _sleepTimer?.cancel();
+    _sleepFadeTimer?.cancel();
+    _sleepTimer = null;
+    _sleepFadeTimer = null;
+  }
+
+  Future<void> disposeService() async {
+    await _finishListeningSession();
+    _cancelSleepTimers();
     await _currentSongController.close();
     await _player.dispose();
   }

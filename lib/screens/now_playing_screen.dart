@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
@@ -236,19 +237,33 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
                   shape: BoxShape.circle,
                   color: Colors.black.withValues(alpha: 0.3),
                 ),
-                child: Center(
-                  child: Text(
-                    song.title.isNotEmpty ? song.title[0].toUpperCase() : '♪',
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 32,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ),
+                child: song.artworkPath != null && song.artworkPath!.isNotEmpty
+                    ? ClipOval(
+                        child: Image.file(
+                          File(song.artworkPath!),
+                          width: 70,
+                          height: 70,
+                          fit: BoxFit.cover,
+                          errorBuilder: (_, __, ___) => _artworkFallback(song),
+                        ),
+                      )
+                    : _artworkFallback(song),
               ),
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _artworkFallback(Song song) {
+    return Center(
+      child: Text(
+        song.title.isNotEmpty ? song.title[0].toUpperCase() : '♪',
+        style: const TextStyle(
+          color: Colors.white,
+          fontSize: 32,
+          fontWeight: FontWeight.bold,
         ),
       ),
     );
@@ -506,32 +521,121 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 28),
-      child: Container(
-        padding: const EdgeInsets.all(12),
-        decoration: BoxDecoration(
-          color: Colors.white.withValues(alpha: 0.05),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
-        ),
-        child: Row(
-          children: [
-            const Icon(Icons.queue_music_rounded,
-                color: AppTheme.textSecondary, size: 16),
-            const SizedBox(width: 10),
-            const Text('Next: ',
-                style: TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
-            Expanded(
-              child: Text(
-                '${next.title} — ${next.artist}',
-                style: const TextStyle(
-                    color: AppTheme.textPrimary,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w500),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+      child: GestureDetector(
+        onTap: () => _showQueueSheet(context, audioService),
+        child: Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.white.withValues(alpha: 0.05),
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.queue_music_rounded,
+                  color: AppTheme.textSecondary, size: 16),
+              const SizedBox(width: 10),
+              const Text('Next: ',
+                  style:
+                      TextStyle(color: AppTheme.textSecondary, fontSize: 12)),
+              Expanded(
+                child: Text(
+                  '${next.title} - ${next.artist}',
+                  style: const TextStyle(
+                      color: AppTheme.textPrimary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w500),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
               ),
-            ),
-          ],
+              const Icon(Icons.chevron_right_rounded,
+                  color: AppTheme.textSecondary, size: 18),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showQueueSheet(BuildContext context, AudioPlayerService audioService) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: AppTheme.surfaceDark,
+      builder: (sheetContext) => SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.72,
+        child: StatefulBuilder(
+          builder: (context, setSheetState) {
+            final queue = audioService.queue;
+            return Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 16, 8, 8),
+                  child: Row(
+                    children: [
+                      const Expanded(
+                        child: Text('Queue',
+                            style: TextStyle(
+                                color: AppTheme.textPrimary,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w700)),
+                      ),
+                      TextButton(
+                        onPressed: queue.length < 2
+                            ? null
+                            : () async {
+                                await audioService.clearQueue();
+                                if (sheetContext.mounted) {
+                                  Navigator.pop(sheetContext);
+                                }
+                              },
+                        child: const Text('Clear'),
+                      ),
+                    ],
+                  ),
+                ),
+                Expanded(
+                  child: ReorderableListView.builder(
+                    itemCount: queue.length,
+                    onReorderItem: (oldIndex, newIndex) {
+                      audioService.reorderQueue(oldIndex, newIndex);
+                      setSheetState(() {});
+                    },
+                    itemBuilder: (_, index) {
+                      final song = queue[index];
+                      final isCurrent = index == audioService.currentIndex;
+                      return ListTile(
+                        key: ValueKey('${song.id}-${song.filePath}'),
+                        leading: Icon(
+                          isCurrent
+                              ? Icons.equalizer_rounded
+                              : Icons.music_note_rounded,
+                          color: isCurrent
+                              ? AppTheme.accent
+                              : AppTheme.textSecondary,
+                        ),
+                        title: Text(song.title,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        subtitle: Text(song.artist,
+                            maxLines: 1, overflow: TextOverflow.ellipsis),
+                        trailing: isCurrent
+                            ? const SizedBox(width: 48)
+                            : IconButton(
+                                tooltip: 'Remove from queue',
+                                icon: const Icon(Icons.close_rounded),
+                                onPressed: () async {
+                                  await audioService.removeFromQueue(index);
+                                  setSheetState(() {});
+                                },
+                              ),
+                      );
+                    },
+                  ),
+                ),
+              ],
+            );
+          },
         ),
       ),
     );

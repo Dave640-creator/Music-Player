@@ -1,3 +1,4 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import '../models/song.dart';
 import '../theme/app_theme.dart';
@@ -49,9 +50,7 @@ class SongTile extends StatelessWidget {
                   Text(
                     song.title,
                     style: TextStyle(
-                      color: isPlaying
-                          ? AppTheme.accent
-                          : AppTheme.textPrimary,
+                      color: isPlaying ? AppTheme.accent : AppTheme.textPrimary,
                       fontSize: 14,
                       fontWeight: FontWeight.w600,
                     ),
@@ -81,8 +80,8 @@ class SongTile extends StatelessWidget {
             // Duration
             Text(
               song.formattedDuration,
-              style: const TextStyle(
-                  color: AppTheme.textSecondary, fontSize: 11),
+              style:
+                  const TextStyle(color: AppTheme.textSecondary, fontSize: 11),
             ),
             // Favorite
             if (onFavorite != null) ...[
@@ -144,10 +143,19 @@ class SongTile extends StatelessWidget {
       child: Stack(
         alignment: Alignment.center,
         children: [
+          if (song.artworkPath != null && song.artworkPath!.isNotEmpty)
+            ClipRRect(
+              borderRadius: BorderRadius.circular(10),
+              child: Image.file(
+                File(song.artworkPath!),
+                width: 46,
+                height: 46,
+                fit: BoxFit.cover,
+                errorBuilder: (_, __, ___) => const SizedBox.shrink(),
+              ),
+            ),
           Text(
-            song.title.isNotEmpty
-                ? song.title[0].toUpperCase()
-                : '♪',
+            song.title.isNotEmpty ? song.title[0].toUpperCase() : '♪',
             style: const TextStyle(
               color: Colors.white,
               fontSize: 18,
@@ -182,8 +190,11 @@ class SongTile extends StatelessWidget {
 
   String _moodEmoji(String mood) {
     const m = {
-      'happy': '😊', 'sad': '😔', 'focus': '📚',
-      'chill': '😌', 'workout': '💪',
+      'happy': '😊',
+      'sad': '😔',
+      'focus': '📚',
+      'chill': '😌',
+      'workout': '💪',
     };
     return m[mood] ?? '';
   }
@@ -195,6 +206,7 @@ class MiniPlayer extends StatelessWidget {
   final VoidCallback onTap;
   final VoidCallback onPlayPause;
   final VoidCallback onNext;
+  final double progress;
 
   const MiniPlayer({
     super.key,
@@ -203,6 +215,7 @@ class MiniPlayer extends StatelessWidget {
     required this.onTap,
     required this.onPlayPause,
     required this.onNext,
+    this.progress = 0,
   });
 
   @override
@@ -227,75 +240,90 @@ class MiniPlayer extends StatelessWidget {
             ),
           ],
         ),
-        child: Row(
+        child: Stack(
           children: [
-            // Artwork
-            Container(
-              width: 38,
-              height: 38,
-              decoration: BoxDecoration(
-                borderRadius: BorderRadius.circular(9),
-                gradient: AppTheme.accentGradient,
-              ),
-              child: Center(
-                child: Text(
-                  song.title.isNotEmpty
-                      ? song.title[0].toUpperCase()
-                      : '♪',
-                  style: const TextStyle(
-                      color: Colors.white,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 15),
+            Row(
+              children: [
+                // Artwork
+                Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(9),
+                    gradient: AppTheme.accentGradient,
+                  ),
+                  child: Center(
+                    child: Text(
+                      song.title.isNotEmpty ? song.title[0].toUpperCase() : '♪',
+                      style: const TextStyle(
+                          color: Colors.white,
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                // Info
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        song.title,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w600,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      Text(
+                        song.artist,
+                        style: const TextStyle(
+                          color: AppTheme.textSecondary,
+                          fontSize: 11,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ],
+                  ),
+                ),
+                // Play/Pause
+                _iconBtn(
+                  isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+                  onPlayPause,
+                  size: 28,
+                ),
+                // Next
+                _iconBtn(Icons.skip_next_rounded, onNext, size: 26),
+              ],
+            ),
+            Positioned(
+              left: 0,
+              right: 0,
+              bottom: 0,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(2),
+                child: LinearProgressIndicator(
+                  value: progress.clamp(0.0, 1.0),
+                  minHeight: 2,
+                  backgroundColor: Colors.white12,
+                  valueColor: const AlwaysStoppedAnimation<Color>(
+                    AppTheme.accent,
+                  ),
                 ),
               ),
             ),
-            const SizedBox(width: 12),
-            // Info
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(
-                    song.title,
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 13,
-                      fontWeight: FontWeight.w600,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    song.artist,
-                    style: const TextStyle(
-                      color: AppTheme.textSecondary,
-                      fontSize: 11,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ],
-              ),
-            ),
-            // Play/Pause
-            _iconBtn(
-              isPlaying
-                  ? Icons.pause_rounded
-                  : Icons.play_arrow_rounded,
-              onPlayPause,
-              size: 28,
-            ),
-            // Next
-            _iconBtn(Icons.skip_next_rounded, onNext, size: 26),
           ],
         ),
       ),
     );
   }
 
-  Widget _iconBtn(IconData icon, VoidCallback onTap,
-      {double size = 24}) {
+  Widget _iconBtn(IconData icon, VoidCallback onTap, {double size = 24}) {
     return GestureDetector(
       onTap: onTap,
       behavior: HitTestBehavior.opaque,
