@@ -1,30 +1,109 @@
-// This is a basic Flutter widget test.
+// Tests for the Smart Music Player app.
 //
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
+// These are self-contained unit + widget tests that do not need platform
+// plugins (sqflite, just_audio, path_provider), so they run reliably on the
+// host machine.
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:smart_music_player/main.dart';
+import 'package:smart_music_player/models/song.dart';
+import 'package:smart_music_player/models/user_stats.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const SmartMusicPlayerApp());
+  group('Song model', () {
+    test('formats duration as mm:ss', () {
+      final song = Song(
+        title: 'Test',
+        artist: 'Artist',
+        filePath: '/tmp/a.mp3',
+        duration: 125,
+      );
+      expect(song.formattedDuration, '02:05');
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+      final longSong = Song(
+        title: 'Long',
+        artist: 'Artist',
+        filePath: '/tmp/b.mp3',
+        duration: 3671,
+      );
+      expect(longSong.formattedDuration, '61:11');
+    });
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    test('toMap / fromMap round-trips every field', () {
+      final song = Song(
+        id: 1,
+        title: 'Title',
+        artist: 'Artist',
+        filePath: '/tmp/t.mp3',
+        duration: 200,
+        album: 'Album',
+        isFavorite: true,
+        playCount: 3,
+        moodTag: 'focus',
+      );
+      final restored = Song.fromMap(song.toMap());
+      expect(restored.id, 1);
+      expect(restored.title, 'Title');
+      expect(restored.artist, 'Artist');
+      expect(restored.filePath, '/tmp/t.mp3');
+      expect(restored.duration, 200);
+      expect(restored.album, 'Album');
+      expect(restored.isFavorite, true);
+      expect(restored.playCount, 3);
+      expect(restored.moodTag, 'focus');
+    });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    test('songs with the same id are equal; copyWith toggles favorite', () {
+      final a = Song(
+        id: 7,
+        title: 'A',
+        artist: 'x',
+        filePath: '/a',
+        duration: 1,
+      );
+      final b = Song(
+        id: 7,
+        title: 'B',
+        artist: 'y',
+        filePath: '/b',
+        duration: 2,
+      );
+      expect(a == b, true);
+
+      final fav = a.copyWith(isFavorite: true);
+      expect(fav.isFavorite, true);
+      expect(fav.id, 7);
+      expect(fav.title, 'A');
+    });
+  });
+
+  group('UserStats', () {
+    test('formatTotalTime renders minutes and hours', () {
+      expect(UserStats(totalPlayTime: 90).formattedTotalTime, '1m');
+      expect(UserStats(totalPlayTime: 3661).formattedTotalTime, '1h 1m');
+    });
+
+    test('toMap / fromMap round-trips', () {
+      final stats = UserStats(
+        id: 1,
+        totalPlayTime: 500,
+        totalSongsPlayed: 10,
+        streakDays: 3,
+        lastPlayedDate: DateTime.utc(2026, 1, 1),
+      );
+      final restored = UserStats.fromMap(stats.toMap());
+      expect(restored.totalPlayTime, 500);
+      expect(restored.totalSongsPlayed, 10);
+      expect(restored.streakDays, 3);
+      expect(restored.lastPlayedDate, DateTime.utc(2026, 1, 1));
+    });
+  });
+
+  testWidgets('a basic MaterialApp renders its child', (tester) async {
+    await tester.pumpWidget(
+      const MaterialApp(home: Scaffold(body: Text('ok'))),
+    );
+    expect(find.text('ok'), findsOneWidget);
   });
 }

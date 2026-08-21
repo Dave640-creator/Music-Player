@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
-import 'providers/media_provider.dart';
+import 'providers/music_provider.dart';
 import 'theme/app_theme.dart';
+import 'screens/main_screen.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -17,7 +18,7 @@ Future<void> main() async {
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
     statusBarIconBrightness: Brightness.light,
-            systemNavigationBarColor: AppTheme.deep,
+    systemNavigationBarColor: AppTheme.primaryDark,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
 
@@ -37,30 +38,16 @@ class SmartMusicPlayerApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-        return ChangeNotifierProvider(
-      create: (_) => MediaProvider(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => MusicProvider()),
+      ],
       child: MaterialApp(
-        title: 'Mosaic Player',
+        title: 'Smart Music Player',
         debugShowCheckedModeBanner: false,
-        theme: AppTheme.buildTheme(brightness: Brightness.dark),
-        home: const MosaicHomePage(),
+        theme: AppTheme.darkTheme,
+        home: const MainScreen(),
       ),
-    );
-  }
-}
-
-/// Placeholder home for the Mosaic Player shell.
-/// The prior agent deleted the DISCOVER/LIBRARY/PLAYER/ME screens during the
-/// rebuild; a minimal home is sufficient to boot the app while those screens
-/// are reintroduced. The media sheets in this turn are standalone and ready to
-/// be wired into those screens.
-class MosaicHomePage extends StatelessWidget {
-  const MosaicHomePage({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-        return const Scaffold(
-      body: Center(child: Text('Mosaic Player')),
     );
   }
 }
