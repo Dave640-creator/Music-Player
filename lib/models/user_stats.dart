@@ -86,6 +86,8 @@ enum BadgeType {
   marathonListener,
   shuffleKing,
   favoritesCollector,
+  fiftySongsCompleted,
+  artistsDiscovered,
 }
 
 // Renamed from Badge to AchievementBadge to avoid conflict with
@@ -156,6 +158,18 @@ class AchievementBadge {
         title: 'Favorites Collector',
         description: 'Add 20 songs to favorites',
         emoji: '❤️',
+      ),
+      AchievementBadge(
+        type: BadgeType.fiftySongsCompleted,
+        title: '50 Songs Completed',
+        description: 'Finish 50 songs',
+        emoji: '✅',
+      ),
+      AchievementBadge(
+        type: BadgeType.artistsDiscovered,
+        title: '10 Artists Discovered',
+        description: 'Listen to 10 different artists',
+        emoji: '🌟',
       ),
     ];
   }

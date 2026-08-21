@@ -27,16 +27,22 @@ class MusicScannerService {
 
   Future<bool> requestPermissions() async {
     if (Platform.isAndroid) {
-      // Try READ_MEDIA_AUDIO first (Android 13+)
       final audioStatus = await Permission.audio.status;
       if (audioStatus.isGranted) return true;
+      if (audioStatus.isPermanentlyDenied) {
+        return false;
+      }
       if (audioStatus.isDenied) {
         final result = await Permission.audio.request();
         if (result.isGranted) return true;
+        if (result.isPermanentlyDenied) return false;
       }
-      // Fallback to storage permission (Android < 13)
+
       final storageStatus = await Permission.storage.status;
       if (storageStatus.isGranted) return true;
+      if (storageStatus.isPermanentlyDenied) {
+        return false;
+      }
       if (storageStatus.isDenied) {
         final result = await Permission.storage.request();
         return result.isGranted;
@@ -52,8 +58,10 @@ class MusicScannerService {
     if (Platform.isAndroid) {
       final audio = await Permission.audio.status;
       if (audio.isGranted) return true;
+      if (audio.isPermanentlyDenied) return false;
       final storage = await Permission.storage.status;
-      return storage.isGranted;
+      if (storage.isGranted) return true;
+      return storage.isPermanentlyDenied ? false : false;
     }
     return true;
   }
@@ -120,16 +128,18 @@ class MusicScannerService {
       final rows = await _mediaStoreChannel.invokeMethod<List<dynamic>>(
         'queryDeviceMusic',
       );
-      if (rows == null || rows.isEmpty) return null;
+      if (rows == null) return null;
 
       final songs = <Song>[];
       final paths = <String>{};
       var errors = 0;
-      for (var i = 0; i < rows.length; i++) {
+      final total = rows.length;
+
+      for (var i = 0; i < total; i++) {
         final row = Map<String, dynamic>.from(rows[i] as Map);
         final path = row['path'] as String?;
         if (path == null || !paths.add(path)) continue;
-        onProgress?.call(i + 1, rows.length);
+        onProgress?.call(i + 1, total);
         try {
           final title = (row['title'] as String?)?.trim();
           final artist = (row['artist'] as String?)?.trim();
@@ -165,6 +175,9 @@ class MusicScannerService {
       return result;
     } on PlatformException catch (error) {
       debugPrint('MediaStore query failed: ${error.code}');
+      return null;
+    } catch (error) {
+      debugPrint('MediaStore scan error: $error');
       return null;
     }
   }
@@ -295,9 +308,7 @@ class MusicScannerService {
       return duration?.inSeconds ?? 0;
     } catch (error) {
       debugPrint('Duration metadata unavailable for ${file.path}: $error');
-      final size = await file.length();
-      if (size <= 0) return 0;
-      return (size / 16000).round().clamp(1, 3600);
+      return 0;
     } finally {
       await player.dispose();
     }

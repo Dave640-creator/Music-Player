@@ -1,9 +1,11 @@
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart';
+import 'dart:developer' as developer;
 import '../models/song.dart';
 import '../models/playlist.dart';
 import '../models/user_stats.dart';
 import '../models/library_scan_result.dart';
+import '../models/playback_event.dart';
 
 class DatabaseHelper {
   static final DatabaseHelper _instance = DatabaseHelper._internal();
@@ -22,7 +24,7 @@ class DatabaseHelper {
     final path = join(dbPath, 'smart_music_player_v2.db');
     return await openDatabase(
       path,
-      version: 2,
+      version: 3,
       onCreate: _createTables,
       onUpgrade: _onUpgrade,
       onConfigure: (db) async {
@@ -105,6 +107,17 @@ class DatabaseHelper {
       )
     ''');
 
+    await db.execute('''
+      CREATE TABLE IF NOT EXISTS playback_events (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        song_id INTEGER NOT NULL,
+        event_type TEXT NOT NULL,
+        occurred_at TEXT NOT NULL,
+        position_seconds INTEGER NOT NULL DEFAULT 0,
+        FOREIGN KEY (song_id) REFERENCES songs(id) ON DELETE CASCADE
+      )
+    ''');
+
     // Create indexes for common queries
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_songs_artist ON songs(artist)');
@@ -114,6 +127,8 @@ class DatabaseHelper {
         'CREATE INDEX IF NOT EXISTS idx_songs_play_count ON songs(play_count DESC)');
     await db.execute(
         'CREATE INDEX IF NOT EXISTS idx_history_played_at ON listening_history(played_at)');
+    await db.execute(
+        'CREATE INDEX IF NOT EXISTS idx_events_occurred_at ON playback_events(occurred_at)');
 
     // Seed user stats row
     await db.insert('user_stats', {
@@ -131,6 +146,20 @@ class DatabaseHelper {
       await db.execute('ALTER TABLE songs ADD COLUMN track_number INTEGER');
       await db.execute('ALTER TABLE songs ADD COLUMN bitrate INTEGER');
     }
+    if (oldVersion < 3) {
+      await db.execute('''
+        CREATE TABLE IF NOT EXISTS playback_events (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          song_id INTEGER NOT NULL,
+          event_type TEXT NOT NULL,
+          occurred_at TEXT NOT NULL,
+          position_seconds INTEGER NOT NULL DEFAULT 0,
+          FOREIGN KEY (song_id) REFERENCES songs(id) ON DELETE CASCADE
+        )
+      ''');
+      await db.execute(
+          'CREATE INDEX IF NOT EXISTS idx_events_occurred_at ON playback_events(occurred_at)');
+    }
   }
 
   // ─────────────── SONGS ───────────────
@@ -140,7 +169,8 @@ class DatabaseHelper {
     try {
       return await db.insert('songs', song.toMap(),
           conflictAlgorithm: ConflictAlgorithm.ignore);
-    } catch (_) {
+    } catch (error) {
+      developer.log('Failed to insert song ${song.title}: $error');
       return -1;
     }
   }
@@ -191,7 +221,8 @@ class DatabaseHelper {
             row['genre'] != song.genre ||
             row['year'] != song.year ||
             row['track_number'] != song.trackNumber ||
-            row['bitrate'] != song.bitrate;
+            row['bitrate'] != song.bitrate ||
+            row['artwork_path'] != song.artworkPath;
         if (changed) {
           await txn.update(
             'songs',
@@ -205,6 +236,7 @@ class DatabaseHelper {
               'year': song.year,
               'track_number': song.trackNumber,
               'bitrate': song.bitrate,
+              'artwork_path': song.artworkPath,
             },
             where: 'id = ?',
             whereArgs: [row['id']],
@@ -264,8 +296,8 @@ class DatabaseHelper {
     final q = '%$query%';
     final rows = await db.query(
       'songs',
-      where: 'title LIKE ? OR artist LIKE ? OR album LIKE ?',
-      whereArgs: [q, q, q],
+      where: 'title LIKE ? OR artist LIKE ? OR album LIKE ? OR genre LIKE ?',
+      whereArgs: [q, q, q, q],
     );
     return rows.map(Song.fromMap).toList();
   }
@@ -281,6 +313,49 @@ class DatabaseHelper {
     final db = await database;
     final rows = await db.query('songs',
         where: 'play_count > 0', orderBy: 'play_count DESC', limit: limit);
+    return rows.map(Song.fromMap).toList();
+  }
+
+  Future<List<Song>> getRecentlyLovedSongs({int limit = 10}) async {
+    final db = await database;
+    final cutoff =
+        DateTime.now().subtract(const Duration(days: 14)).toIso8601String();
+    final rows = await db.rawQuery('''
+      SELECT s.*, COUNT(h.id) as recent_plays, SUM(h.duration_played) as recent_seconds
+      FROM songs s
+      INNER JOIN listening_history h ON h.song_id = s.id
+      WHERE h.played_at >= ?
+      GROUP BY s.id
+      ORDER BY recent_plays DESC, recent_seconds DESC
+      LIMIT ?
+    ''', [cutoff, limit]);
+    return rows.map(Song.fromMap).toList();
+  }
+
+  Future<List<Song>> getForgottenSongs({int limit = 20}) async {
+    final db = await database;
+    final cutoff =
+        DateTime.now().subtract(const Duration(days: 30)).toIso8601String();
+    final rows = await db.rawQuery('''
+      SELECT s.*
+      FROM songs s
+      LEFT JOIN listening_history h ON h.song_id = s.id AND h.played_at >= ?
+      WHERE h.id IS NULL AND s.play_count > 0
+      ORDER BY s.play_count DESC, s.date_added DESC
+      LIMIT ?
+    ''', [cutoff, limit]);
+    return rows.map(Song.fromMap).toList();
+  }
+
+  Future<List<Song>> getDiscoveries({int limit = 15}) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT s.*
+      FROM songs s
+      WHERE s.is_favorite = 0 AND s.play_count >= 1
+      ORDER BY s.date_added DESC
+      LIMIT ?
+    ''', [limit]);
     return rows.map(Song.fromMap).toList();
   }
 
@@ -343,13 +418,15 @@ class DatabaseHelper {
       INNER JOIN (
         SELECT LOWER(TRIM(title)) AS title_key,
                LOWER(TRIM(artist)) AS artist_key,
-               LOWER(TRIM(album)) AS album_key
+               LOWER(TRIM(album)) AS album_key,
+               duration AS dur
         FROM songs
-        GROUP BY title_key, artist_key, album_key
+        GROUP BY title_key, artist_key, album_key, dur
         HAVING COUNT(*) > 1
       ) d ON LOWER(TRIM(s.title)) = d.title_key
          AND LOWER(TRIM(s.artist)) = d.artist_key
          AND LOWER(TRIM(s.album)) = d.album_key
+         AND s.duration = d.dur
       ORDER BY LOWER(s.title), LOWER(s.artist), s.date_added ASC
     ''');
     return rows.map(Song.fromMap).toList();
@@ -481,6 +558,51 @@ class DatabaseHelper {
     return (rows.first['total'] as num?)?.toInt() ?? 0;
   }
 
+  Future<void> addPlaybackEvent(PlaybackEvent event) async {
+    final db = await database;
+    await db.insert('playback_events', event.toMap());
+  }
+
+  Future<Map<String, int>> getPlaybackEventCounts({DateTime? since}) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT event_type, COUNT(*) AS total
+      FROM playback_events
+      ${since == null ? '' : 'WHERE occurred_at >= ?'}
+      GROUP BY event_type
+    ''', since == null ? null : [since.toIso8601String()]);
+    return {
+      for (final row in rows)
+        row['event_type'] as String: (row['total'] as num?)?.toInt() ?? 0,
+    };
+  }
+
+  Future<int> getDiscoveredArtistCount() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT COUNT(DISTINCT LOWER(TRIM(s.artist))) AS total
+      FROM songs s
+      INNER JOIN playback_events e ON e.song_id = s.id
+    ''');
+    return (rows.first['total'] as num?)?.toInt() ?? 0;
+  }
+
+  Future<int?> getMostActiveListeningHour({DateTime? since}) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT CAST(strftime('%H', occurred_at) AS INTEGER) AS hour,
+             COUNT(*) AS total
+      FROM playback_events
+      WHERE event_type IN ('started', 'resumed')
+      ${since == null ? '' : 'AND occurred_at >= ?'}
+      GROUP BY hour
+      ORDER BY total DESC
+      LIMIT 1
+    ''', since == null ? null : [since.toIso8601String()]);
+    if (rows.isEmpty) return null;
+    return (rows.first['hour'] as num?)?.toInt();
+  }
+
   // ─────────────── USER STATS ───────────────
 
   Future<UserStats> getUserStats() async {
@@ -531,7 +653,9 @@ class DatabaseHelper {
       try {
         result
             .add(BadgeType.values.firstWhere((e) => e.name == r['badge_type']));
-      } catch (_) {}
+      } catch (error) {
+        developer.log('Unknown badge type: ${r['badge_type']}');
+      }
     }
     return result;
   }
@@ -550,5 +674,53 @@ class DatabaseHelper {
     ''');
     if (rows.isEmpty) return 'None yet';
     return (rows.first['artist'] as String?) ?? 'None yet';
+  }
+
+  Future<List<Song>> getTopArtistsSongs({int limit = 5}) async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT s.*
+      FROM songs s
+      WHERE s.play_count > 0
+      ORDER BY s.play_count DESC
+      LIMIT ?
+    ''', [limit]);
+    return rows.map(Song.fromMap).toList();
+  }
+
+  Future<Map<String, int>> getGenreStats() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT genre, COUNT(*) as cnt
+      FROM songs
+      WHERE genre IS NOT NULL AND genre != ''
+      GROUP BY genre
+      ORDER BY cnt DESC
+      LIMIT 10
+    ''');
+    return {
+      for (final r in rows)
+        (r['genre'] as String): (r['cnt'] as int?) ?? 0,
+    };
+  }
+
+  Future<int> getAverageSessionSeconds() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT AVG(duration_played) as avg
+      FROM listening_history
+      WHERE duration_played >= 5
+    ''');
+    return ((rows.first['avg'] as num?)?.toInt() ?? 0).clamp(0, 86400);
+  }
+
+  Future<int> getTotalUniqueArtists() async {
+    final db = await database;
+    final rows = await db.rawQuery('''
+      SELECT COUNT(DISTINCT LOWER(TRIM(artist))) as total
+      FROM songs
+      WHERE play_count > 0
+    ''');
+    return (rows.first['total'] as num?)?.toInt() ?? 0;
   }
 }

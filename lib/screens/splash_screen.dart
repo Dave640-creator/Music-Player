@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import '../providers/music_provider.dart';
 import '../theme/app_theme.dart';
 import 'main_screen.dart';
+import 'library_setup_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -66,9 +67,25 @@ class _SplashScreenState extends State<SplashScreen>
 
     try {
       await context.read<MusicProvider>().init();
-    } catch (_) {}
+    } catch (error) {
+      debugPrint('Splash init failed: $error');
+    }
 
-    if (mounted) {
+    if (!mounted) return;
+
+    final provider = context.read<MusicProvider>();
+    final songCount = provider.rawSongs.length;
+
+    if (songCount == 0 && mounted) {
+      Navigator.of(context).pushReplacement(
+        PageRouteBuilder(
+          pageBuilder: (_, __, ___) => const LibrarySetupScreen(),
+          transitionsBuilder: (_, anim, __, child) =>
+              FadeTransition(opacity: anim, child: child),
+          transitionDuration: const Duration(milliseconds: 500),
+        ),
+      );
+    } else if (mounted) {
       Navigator.of(context).pushReplacement(
         PageRouteBuilder(
           pageBuilder: (_, __, ___) => const MainScreen(),

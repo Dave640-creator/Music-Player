@@ -469,6 +469,16 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
               setState(() {});
             },
           ),
+          _ControlButton(
+            icon: Icons.radio_rounded,
+            isActive: false,
+            size: 22,
+            onTap: () async {
+              final song = audioService.currentSong;
+              if (song == null || !context.mounted) return;
+              await context.read<MusicProvider>().startRadio(song);
+            },
+          ),
         ],
       ),
     );
@@ -592,6 +602,14 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
                               },
                         child: const Text('Clear'),
                       ),
+                      IconButton(
+                        tooltip: 'Save queue as playlist',
+                        icon: const Icon(Icons.playlist_add_rounded),
+                        onPressed: queue.isEmpty
+                            ? null
+                            : () => _showSaveQueueDialog(
+                                sheetContext, audioService),
+                      ),
                     ],
                   ),
                 ),
@@ -639,6 +657,45 @@ class _NowPlayingScreenState extends State<NowPlayingScreen>
         ),
       ),
     );
+  }
+
+  void _showSaveQueueDialog(
+      BuildContext context, AudioPlayerService audioService) {
+    final controller = TextEditingController(text: 'My Queue');
+    showDialog<void>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        backgroundColor: AppTheme.surfaceDark,
+        title: const Text('Save Queue as Playlist'),
+        content: TextField(
+          controller: controller,
+          autofocus: true,
+          decoration: const InputDecoration(labelText: 'Playlist name'),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () async {
+              final name = controller.text.trim();
+              if (name.isEmpty) return;
+              await context.read<MusicProvider>().saveQueueAsPlaylist(name);
+              if (dialogContext.mounted) Navigator.pop(dialogContext);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Saved "$name" as a playlist')),
+                );
+              }
+            },
+            child: const Text('Save'),
+          ),
+        ],
+      ),
+    ).whenComplete(() {
+      controller.dispose();
+    });
   }
 
   void _showSleepTimer(BuildContext context, AudioPlayerService audioService) {

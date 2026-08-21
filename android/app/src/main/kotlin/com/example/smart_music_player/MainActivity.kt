@@ -1,6 +1,9 @@
 package com.example.smart_music_player
 
+import android.net.Uri
 import android.provider.MediaStore
+import java.io.File
+import java.io.FileOutputStream
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -8,6 +11,24 @@ import io.flutter.plugin.common.MethodChannel
 class MainActivity : FlutterActivity() {
 	private companion object {
 		const val CHANNEL = "smart_music_player/media_store"
+	}
+
+	private fun cacheArtwork(albumId: Long): String? {
+		if (albumId <= 0) return null
+		val directory = File(cacheDir, "music_artwork")
+		if (!directory.exists()) directory.mkdirs()
+		val output = File(directory, "$albumId.jpg")
+		if (output.exists()) return output.absolutePath
+		return try {
+			val uri = Uri.parse("content://media/external/audio/albumart/$albumId")
+			contentResolver.openInputStream(uri)?.use { input ->
+				FileOutputStream(output).use { outputStream -> input.copyTo(outputStream) }
+			}
+			if (output.exists() && output.length() > 0) output.absolutePath else null
+		} catch (_: Exception) {
+			output.delete()
+			null
+		}
 	}
 
 	override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
@@ -54,6 +75,8 @@ class MainActivity : FlutterActivity() {
 						val modifiedIndex = cursor.getColumnIndex(MediaStore.Audio.Media.DATE_MODIFIED)
 						while (cursor.moveToNext()) {
 							val path = cursor.getString(pathIndex) ?: continue
+							val albumId = cursor.getLong(albumIdIndex)
+							val artworkPath = cacheArtwork(albumId)
 							songs.add(
 								mapOf(
 									"path" to path,
@@ -64,12 +87,13 @@ class MainActivity : FlutterActivity() {
 									"year" to cursor.getInt(yearIndex),
 									"trackNumber" to cursor.getInt(trackIndex),
 									"bitrate" to cursor.getInt(bitrateIndex),
-									"artwork" to "content://media/external/audio/albumart/${cursor.getLong(albumIdIndex)}",
+									"artwork" to artworkPath,
 									"duration" to cursor.getLong(durationIndex),
 									"modified" to cursor.getLong(modifiedIndex),
 								),
 							)
 						}
+
 					}
 					result.success(songs)
 				} catch (error: Exception) {

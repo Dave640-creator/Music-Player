@@ -46,8 +46,8 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh_rounded),
-            tooltip: 'Refresh',
-            onPressed: () => context.read<MusicProvider>().loadAll(),
+            tooltip: 'Refresh Library',
+            onPressed: () => context.read<MusicProvider>().scanDevice(),
           ),
         ],
       ),
@@ -60,6 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
               if (provider.searchQuery.isEmpty && provider.rawSongs.isNotEmpty)
                 _buildForYou(provider),
               if (provider.isScanning) _buildScanProgress(provider),
+              if (provider.scanError != null) _buildScanError(provider),
               if (provider.isLoading && !provider.isScanning)
                 const Expanded(
                   child: Center(
@@ -118,6 +119,8 @@ class _HomeScreenState extends State<HomeScreen> {
             SortBy.recentlyAdded: 'Recent',
             SortBy.title: 'Title',
             SortBy.artist: 'Artist',
+            SortBy.album: 'Album',
+            SortBy.duration: 'Duration',
             SortBy.mostPlayed: 'Most Played',
           }[sort]!;
           return Padding(
@@ -210,90 +213,54 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  Widget _buildForYou(MusicProvider provider) {
-    final songs = provider.getRecommendedSongs();
-    if (songs.isEmpty) return const SizedBox.shrink();
-
-    return SizedBox(
-      height: 126,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildScanError(MusicProvider provider) {
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.redAccent.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.redAccent.withValues(alpha: 0.3)),
+      ),
+      child: Row(
         children: [
-          const Padding(
-            padding: EdgeInsets.fromLTRB(16, 4, 16, 8),
-            child: Text(
-              'For You',
-              style: TextStyle(
-                color: AppTheme.textPrimary,
-                fontSize: 16,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-          ),
+          const Icon(Icons.error_outline_rounded,
+              color: Colors.redAccent, size: 20),
+          const SizedBox(width: 8),
           Expanded(
-            child: ListView.separated(
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              scrollDirection: Axis.horizontal,
-              itemCount: songs.length,
-              separatorBuilder: (_, __) => const SizedBox(width: 10),
-              itemBuilder: (context, index) {
-                final song = songs[index];
-                return SizedBox(
-                  width: 150,
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(12),
-                    onTap: () {
-                      provider.playSong(song, queue: songs);
-                      _openNowPlaying();
-                    },
-                    child: Ink(
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        color: AppTheme.cardDark,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Icon(
-                            song.isFavorite
-                                ? Icons.favorite_rounded
-                                : Icons.auto_awesome_rounded,
-                            color: song.isFavorite
-                                ? AppTheme.accentSecondary
-                                : AppTheme.accent,
-                            size: 18,
-                          ),
-                          const Spacer(),
-                          Text(
-                            song.title,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppTheme.textPrimary,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          Text(
-                            song.artist,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              color: AppTheme.textSecondary,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              },
-            ),
+            child: Text(provider.scanError!,
+                style: const TextStyle(
+                    color: AppTheme.textSecondary, fontSize: 12)),
           ),
         ],
       ),
+    );
+  }
+
+  Widget _buildForYou(MusicProvider provider) {
+    return _ForYouBody(key: ValueKey(provider.forYouVersion));
+  }
+
+  Widget _buildSongList(MusicProvider provider) {
+    final songs = provider.allSongs;
+    final currentSong = provider.audioService.currentSong;
+    return ListView.builder(
+      padding: const EdgeInsets.only(bottom: 120),
+      itemCount: songs.length,
+      itemBuilder: (context, index) {
+        final song = songs[index];
+        final isPlaying = currentSong?.id == song.id;
+        return SongTile(
+          song: song,
+          isPlaying: isPlaying,
+          onTap: () {
+            provider.playSong(song);
+            _openNowPlaying();
+          },
+          onFavorite: () => provider.toggleFavorite(song),
+          onMore: () => _showSongOptions(context, song, provider),
+        );
+      },
     );
   }
 
@@ -320,7 +287,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
             const SizedBox(height: 20),
             Text(
-              hasQuery ? 'No Results' : 'No Music Yet',
+              hasQuery ? 'No Results' : 'Your Library Is Empty',
               style: const TextStyle(
                 color: AppTheme.textPrimary,
                 fontSize: 22,
@@ -331,7 +298,7 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(
               hasQuery
                   ? 'Try a different search term'
-                  : 'Tap Import to scan your device\nor pick music files manually',
+                  : 'Allow music access and automatically\nimport your entire music library.',
               style:
                   const TextStyle(color: AppTheme.textSecondary, fontSize: 14),
               textAlign: TextAlign.center,
@@ -384,29 +351,6 @@ class _HomeScreenState extends State<HomeScreen> {
           ],
         ),
       ),
-    );
-  }
-
-  Widget _buildSongList(MusicProvider provider) {
-    final songs = provider.allSongs;
-    final currentSong = provider.audioService.currentSong;
-    return ListView.builder(
-      padding: const EdgeInsets.only(bottom: 120),
-      itemCount: songs.length,
-      itemBuilder: (context, index) {
-        final song = songs[index];
-        final isPlaying = currentSong?.id == song.id;
-        return SongTile(
-          song: song,
-          isPlaying: isPlaying,
-          onTap: () {
-            provider.playSong(song);
-            _openNowPlaying();
-          },
-          onFavorite: () => provider.toggleFavorite(song),
-          onMore: () => _showSongOptions(context, song, provider),
-        );
-      },
     );
   }
 
@@ -472,6 +416,24 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           const Divider(color: Colors.white10),
+          ListTile(
+            leading:
+                const Icon(Icons.play_arrow_rounded, color: AppTheme.accent),
+            title: const Text('Play Next'),
+            onTap: () async {
+              Navigator.pop(ctx);
+              await provider.playNext(song);
+            },
+          ),
+          ListTile(
+            leading:
+                const Icon(Icons.queue_music_rounded, color: AppTheme.accent),
+            title: const Text('Add to Queue'),
+            onTap: () async {
+              Navigator.pop(ctx);
+              await provider.addToQueue(song);
+            },
+          ),
           ListTile(
             leading:
                 const Icon(Icons.playlist_add_rounded, color: AppTheme.accent),
@@ -798,5 +760,187 @@ class _HomeScreenState extends State<HomeScreen> {
       'workout': '💪',
     };
     return m[mood] ?? '🎵';
+  }
+}
+
+class _ForYouBody extends StatefulWidget {
+  const _ForYouBody({super.key});
+
+  @override
+  State<_ForYouBody> createState() => _ForYouBodyState();
+}
+
+class _ForYouBodyState extends State<_ForYouBody> {
+  Future<Map<String, List<Song>>>? _future;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _future ??= Provider.of<MusicProvider>(context, listen: false).getForYouSections();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FutureBuilder<Map<String, List<Song>>>(
+      future: _future,
+      builder: (context, snapshot) {
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return const SizedBox.shrink();
+        }
+        final sections = snapshot.data!;
+        return ListView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          padding: const EdgeInsets.only(bottom: 8),
+          itemCount: sections.length,
+          itemBuilder: (context, index) {
+            final entry = sections.entries.elementAt(index);
+            final title = entry.key;
+            final songs = entry.value;
+            return _ForYouSection(
+              title: title,
+              songs: songs,
+              onPlayAll: () {
+                final provider = Provider.of<MusicProvider>(context, listen: false);
+                provider.audioService.setQueue(songs);
+                Navigator.of(context).push(
+                  PageRouteBuilder(
+                    pageBuilder: (_, __, ___) => const NowPlayingScreen(),
+                    transitionsBuilder: (_, anim, __, child) =>
+                        SlideTransition(
+                      position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+                          .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                      child: child,
+                    ),
+                  ),
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+}
+
+class _ForYouSection extends StatelessWidget {
+  final String title;
+  final List<Song> songs;
+  final VoidCallback onPlayAll;
+
+  const _ForYouSection({
+    required this.title,
+    required this.songs,
+    required this.onPlayAll,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 12, 16, 6),
+          child: Row(
+            children: [
+              Text(
+                title,
+                style: const TextStyle(
+                  color: AppTheme.textPrimary,
+                  fontSize: 16,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              const Spacer(),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                onPressed: onPlayAll,
+                icon: const Icon(Icons.play_arrow_rounded, size: 18, color: AppTheme.accent),
+                label: const Text('Play', style: TextStyle(color: AppTheme.accent, fontSize: 12)),
+              ),
+            ],
+          ),
+        ),
+        SizedBox(
+          height: 110,
+          child: ListView.separated(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            scrollDirection: Axis.horizontal,
+            itemCount: songs.length,
+            separatorBuilder: (_, __) => const SizedBox(width: 10),
+            itemBuilder: (context, index) {
+              final song = songs[index];
+              return SizedBox(
+                width: 140,
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(12),
+                  onTap: () {
+                    final provider = context.read<MusicProvider>();
+                    provider.playSong(song, queue: songs);
+                    final nav = Navigator.of(context);
+                    nav.push(
+                      PageRouteBuilder(
+                        pageBuilder: (_, __, ___) => const NowPlayingScreen(),
+                        transitionsBuilder: (_, anim, __, child) =>
+                            SlideTransition(
+                          position: Tween<Offset>(begin: const Offset(0, 1), end: Offset.zero)
+                              .animate(CurvedAnimation(parent: anim, curve: Curves.easeOutCubic)),
+                          child: child,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Ink(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppTheme.cardDark,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Icon(
+                          song.isFavorite
+                              ? Icons.favorite_rounded
+                              : Icons.auto_awesome_rounded,
+                          color: song.isFavorite
+                              ? AppTheme.accentSecondary
+                              : AppTheme.accent,
+                          size: 16,
+                        ),
+                        const Spacer(),
+                        Text(
+                          song.title,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppTheme.textPrimary,
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          song.artist,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: const TextStyle(
+                            color: AppTheme.textSecondary,
+                            fontSize: 11,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
   }
 }

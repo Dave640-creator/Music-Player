@@ -18,8 +18,11 @@ class MainScreen extends StatefulWidget {
   State<MainScreen> createState() => _MainScreenState();
 }
 
-class _MainScreenState extends State<MainScreen> {
+class _MainScreenState extends State<MainScreen> with WidgetsBindingObserver {
   int _currentIndex = 0;
+  bool _didRescan = false;
+  MusicProvider? _provider;
+  bool _isInitializing = true;
 
   static const List<Widget> _screens = [
     HomeScreen(),
@@ -45,7 +48,56 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _provider = Provider.of<MusicProvider>(context, listen: false);
+    _initialize();
+  }
+
+  Future<void> _initialize() async {
+    try {
+      await _provider?.init();
+    } catch (e) {
+      debugPrint('MainScreen initialization failed: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _isInitializing = false);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_didRescan) {
+      _didRescan = true;
+      Future.microtask(() {
+        if (!mounted) return;
+        _provider?.scanDevice();
+      });
+    }
+    if (state == AppLifecycleState.paused) {
+      _didRescan = false;
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
+    if (_isInitializing) {
+      return const Scaffold(
+        backgroundColor: AppTheme.primaryDark,
+        body: Center(
+          child: CircularProgressIndicator(color: AppTheme.accent),
+        ),
+      );
+    }
+
     return Scaffold(
       backgroundColor: AppTheme.primaryDark,
       body: IndexedStack(

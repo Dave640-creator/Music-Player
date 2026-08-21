@@ -252,14 +252,17 @@ class MiniPlayer extends StatelessWidget {
                     borderRadius: BorderRadius.circular(9),
                     gradient: AppTheme.accentGradient,
                   ),
-                  child: Center(
-                    child: Text(
-                      song.title.isNotEmpty ? song.title[0].toUpperCase() : '♪',
-                      style: const TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15),
-                    ),
+                  child: ClipRRect(
+                    borderRadius: BorderRadius.circular(9),
+                    child: song.artworkPath != null &&
+                            !song.artworkPath!.startsWith('content://')
+                        ? Image.file(
+                            File(song.artworkPath!),
+                            fit: BoxFit.cover,
+                            errorBuilder: (_, __, ___) =>
+                                _miniArtworkFallback(),
+                          )
+                        : _miniArtworkFallback(),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -330,6 +333,16 @@ class MiniPlayer extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 4),
         child: Icon(icon, color: Colors.white, size: size),
+      ),
+    );
+  }
+
+  Widget _miniArtworkFallback() {
+    return Center(
+      child: Text(
+        song.title.isNotEmpty ? song.title[0].toUpperCase() : '♪',
+        style: const TextStyle(
+            color: Colors.white, fontWeight: FontWeight.bold, fontSize: 15),
       ),
     );
   }

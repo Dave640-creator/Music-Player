@@ -21,6 +21,11 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
   int _todaySeconds = 0;
   int _weekSeconds = 0;
   int _monthSeconds = 0;
+  Map<String, int> _eventCounts = {};
+  int? _activeHour;
+  Map<String, int> _genreStats = {};
+  int _avgSessionSeconds = 0;
+  int _totalUniqueArtists = 0;
   bool _isLoading = true;
 
   @override
@@ -34,6 +39,7 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     setState(() => _isLoading = true);
 
     final provider = context.read<MusicProvider>();
+    await provider.refreshBadges();
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final results = await Future.wait([
@@ -43,6 +49,14 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
       provider.getListeningSecondsSince(today),
       provider.getListeningSecondsSince(now.subtract(const Duration(days: 7))),
       provider.getListeningSecondsSince(now.subtract(const Duration(days: 30))),
+      provider.getPlaybackEventCounts(
+          since: now.subtract(const Duration(days: 7))),
+      provider.getMostActiveListeningHour(
+          since: now.subtract(const Duration(days: 7))),
+      provider.getTopArtistsSongs(limit: 5),
+      provider.getGenreStats(),
+      provider.getAverageSessionSeconds(),
+      provider.getTotalUniqueArtists(),
     ]);
 
     if (mounted) {
@@ -53,6 +67,12 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
         _todaySeconds = results[3] as int;
         _weekSeconds = results[4] as int;
         _monthSeconds = results[5] as int;
+        _eventCounts = results[6] as Map<String, int>;
+        _activeHour = results[7] as int?;
+        _topSongs = results[8] as List<Song>;
+        _genreStats = results[9] as Map<String, int>;
+        _avgSessionSeconds = results[10] as int;
+        _totalUniqueArtists = results[11] as int;
         _isLoading = false;
       });
     }
@@ -89,11 +109,21 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
                       const SizedBox(height: 16),
                       _buildFavoriteArtistCard(),
                       const SizedBox(height: 16),
+                      _buildListeningInsight(),
+                      const SizedBox(height: 16),
                       _buildDailyChart(),
                       const SizedBox(height: 16),
                       _buildTopSongs(),
                       const SizedBox(height: 16),
+                       _buildCompletionStats(),
+                      const SizedBox(height: 16),
                       _buildMoodChart(provider),
+                      const SizedBox(height: 16),
+                      _buildTopArtists(),
+                      const SizedBox(height: 16),
+                      _buildGenreStats(),
+                      const SizedBox(height: 16),
+                      _buildSessionStats(),
                       const SizedBox(height: 16),
                       _buildBadgesSection(provider),
                       const SizedBox(height: 80),
@@ -162,6 +192,43 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     return '${minutes}m';
   }
 
+  Widget _buildCompletionStats() {
+    final completed = _eventCounts['completed'] ?? 0;
+    final skipped = _eventCounts['skipped'] ?? 0;
+    final finished = completed + skipped;
+    final completionRate =
+        finished == 0 ? 0 : (completed / finished * 100).round();
+    final skipRate = finished == 0 ? 0 : (skipped / finished * 100).round();
+    return _card(
+      title: 'Playback Quality · 7 Days',
+      child: Row(
+        children: [
+          Expanded(
+            child: _MetricValue(
+              label: 'Completion Rate',
+              value: '$completionRate%',
+              color: AppTheme.accent,
+            ),
+          ),
+          Expanded(
+            child: _MetricValue(
+              label: 'Skip Rate',
+              value: '$skipRate%',
+              color: AppTheme.accentSecondary,
+            ),
+          ),
+          Expanded(
+            child: _MetricValue(
+              label: 'Sessions',
+              value: '$finished',
+              color: AppTheme.accentTertiary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildFavoriteArtistCard() {
     return Container(
       padding: const EdgeInsets.all(16),
@@ -212,6 +279,32 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
           ),
           const Icon(Icons.star_rounded,
               color: AppTheme.accentSecondary, size: 20),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildListeningInsight() {
+    final hour = _activeHour;
+    final time = hour == null
+        ? 'No pattern yet'
+        : '${hour.toString().padLeft(2, '0')}:00 - '
+            '${((hour + 2) % 24).toString().padLeft(2, '0')}:00';
+    return _card(
+      title: 'Your Listening Insight',
+      child: Row(
+        children: [
+          const Icon(Icons.insights_rounded,
+              color: AppTheme.accentTertiary, size: 28),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              'You usually listen most between $time.\n'
+              'Your most played artist is $_favoriteArtist.',
+              style: const TextStyle(
+                  color: AppTheme.textSecondary, fontSize: 13, height: 1.4),
+            ),
+          ),
         ],
       ),
     );
@@ -479,6 +572,197 @@ class _AnalyticsScreenState extends State<AnalyticsScreen> {
     );
   }
 
+  Widget _buildTopArtists() {
+    final topArtists = _topSongs.take(5).toList();
+    if (topArtists.isEmpty) {
+      return _card(
+        title: '🎤 Top Artists',
+        child: const Padding(
+          padding: EdgeInsets.symmetric(vertical: 20),
+          child: Center(
+            child: Text(
+              'Start playing to see your top artists',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return _card(
+      title: '🎤 Top Artists',
+      child: Column(
+        children: topArtists.asMap().entries.map((e) {
+          final rank = e.key;
+          final song = e.value;
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Container(
+                  width: 28,
+                  height: 28,
+                  decoration: BoxDecoration(
+                    gradient: rank == 0 ? AppTheme.accentGradient : null,
+                    color: rank > 0 ? AppTheme.surfaceDark : null,
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      '${rank + 1}',
+                      style: TextStyle(
+                        color: rank == 0
+                            ? Colors.white
+                            : AppTheme.textSecondary,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(song.artist,
+                          style: const TextStyle(
+                              color: AppTheme.textPrimary,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w600),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                      Text(song.title,
+                          style: const TextStyle(
+                              color: AppTheme.textSecondary, fontSize: 11),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis),
+                    ],
+                  ),
+                ),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: AppTheme.accent.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(
+                    '${song.playCount} play${song.playCount != 1 ? 's' : ''}',
+                    style: const TextStyle(
+                        color: AppTheme.accent,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildGenreStats() {
+    if (_genreStats.isEmpty) {
+      return _card(
+        title: '🎸 Top Genres',
+        child: const Padding(
+          padding: EdgeInsets.symmetric(vertical: 20),
+          child: Center(
+            child: Text(
+              'No genre data yet',
+              style: TextStyle(color: AppTheme.textSecondary, fontSize: 13),
+            ),
+          ),
+        ),
+      );
+    }
+
+    final total = _genreStats.values.fold(0, (a, b) => a + b);
+    return _card(
+      title: '🎸 Top Genres',
+      child: Column(
+        children: _genreStats.entries.take(5).map((e) {
+          final pct = e.value / total;
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text(
+                            e.key,
+                            style: const TextStyle(
+                                color: AppTheme.textPrimary,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w500),
+                          ),
+                          Text(
+                            '${e.value} songs',
+                            style: const TextStyle(
+                                color: AppTheme.textSecondary, fontSize: 11),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(4),
+                        child: LinearProgressIndicator(
+                          value: pct,
+                          backgroundColor: AppTheme.accentSecondary.withValues(alpha: 0.1),
+                          valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.accentSecondary),
+                          minHeight: 6,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  Widget _buildSessionStats() {
+    final avgMin = _avgSessionSeconds ~/ 60;
+    return _card(
+      title: '⏱ Listening Sessions',
+      child: Row(
+        children: [
+          Expanded(
+            child: _MetricValue(
+              label: 'Avg Session',
+              value: '$avgMin min',
+              color: AppTheme.accent,
+            ),
+          ),
+          Expanded(
+            child: _MetricValue(
+              label: 'Unique Artists',
+              value: '$_totalUniqueArtists',
+              color: AppTheme.accentSecondary,
+            ),
+          ),
+          Expanded(
+            child: _MetricValue(
+              label: 'Library Size',
+              value: '${_topSongs.length}',
+              color: AppTheme.accentTertiary,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildBadgesSection(MusicProvider provider) {
     // FIX: use AchievementBadge instead of Badge (Badge conflicts with Flutter Material 3)
     final all = AchievementBadge.allBadges();
@@ -612,6 +896,34 @@ class _StatCard extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+}
+
+class _MetricValue extends StatelessWidget {
+  final String label;
+  final String value;
+  final Color color;
+
+  const _MetricValue({
+    required this.label,
+    required this.value,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        Text(value,
+            style: TextStyle(
+                color: color, fontSize: 20, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 4),
+        Text(label,
+            textAlign: TextAlign.center,
+            style:
+                const TextStyle(color: AppTheme.textSecondary, fontSize: 11)),
+      ],
     );
   }
 }

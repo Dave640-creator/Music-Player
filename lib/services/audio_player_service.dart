@@ -1,11 +1,14 @@
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:just_audio_background/just_audio_background.dart';
+import 'package:audio_session/audio_session.dart';
 import '../models/song.dart';
 import '../database/database_helper.dart';
 import '../models/user_stats.dart';
 import '../models/repeat_mode.dart';
+import '../models/playback_event.dart' as app_events;
 
 class AudioPlayerService {
   static final AudioPlayerService _instance = AudioPlayerService._internal();
@@ -35,6 +38,8 @@ class AudioPlayerService {
   final StreamController<Song?> _currentSongController =
       StreamController<Song?>.broadcast();
 
+  bool _isInitialized = false;
+
   AudioPlayer get player => _player;
   List<Song> get queue => _queue;
   int get currentIndex => _currentIndex;
@@ -54,6 +59,16 @@ class AudioPlayerService {
   Stream<double> get volumeStream => _player.volumeStream;
 
   Future<void> init() async {
+    if (_isInitialized) return;
+    _isInitialized = true;
+
+    try {
+      final session = await AudioSession.instance;
+      await session.configure(const AudioSessionConfiguration.music());
+    } catch (e) {
+      debugPrint('Audio session configuration skipped: $e');
+    }
+
     _player.playerStateStream.listen((state) {
       if (state.processingState == ProcessingState.completed) {
         _onSongCompleted();
@@ -78,6 +93,17 @@ class AudioPlayerService {
     _queue = [..._queue, song];
   }
 
+  Future<void> playNext(Song song) async {
+    if (_queue.any((queuedSong) => queuedSong.id == song.id)) return;
+    if (_queue.isEmpty) {
+      await setQueue([song]);
+      return;
+    }
+    final insertAt = (_currentIndex + 1).clamp(0, _queue.length);
+    _queue.insert(insertAt, song);
+    if (_isShuffle) _generateShuffleIndices();
+  }
+
   Future<void> removeFromQueue(int index) async {
     if (index < 0 || index >= _queue.length || index == _currentIndex) {
       return;
@@ -91,10 +117,21 @@ class AudioPlayerService {
     if (oldIndex < 0 || oldIndex >= _queue.length) return;
     if (newIndex > oldIndex) newIndex--;
     if (newIndex < 0 || newIndex >= _queue.length) return;
-    if (oldIndex == _currentIndex || newIndex == _currentIndex) return;
 
     final song = _queue.removeAt(oldIndex);
     _queue.insert(newIndex, song);
+
+    if (_currentIndex == oldIndex) {
+      _currentIndex = newIndex;
+    } else if (oldIndex < _currentIndex && newIndex >= _currentIndex) {
+      _currentIndex--;
+    } else if (oldIndex > _currentIndex && newIndex <= _currentIndex) {
+      _currentIndex++;
+    }
+
+    if (_isShuffle) {
+      _generateShuffleIndices();
+    }
   }
 
   Future<void> clearQueue() async {
@@ -117,6 +154,38 @@ class AudioPlayerService {
     _sessionListenedSeconds = 0;
 
     try {
+      if (song.filePath.isEmpty) {
+        debugPrint('Empty file path for song: ${song.title}');
+        _skipAttempts++;
+        if (_skipAttempts < _queue.length) {
+          await _skipToNext();
+        } else {
+          _skipAttempts = 0;
+        }
+        return;
+      }
+
+      final file = File(song.filePath);
+      if (!await file.exists()) {
+        debugPrint('File missing: ${song.filePath}');
+        _skipAttempts++;
+        if (_skipAttempts < _queue.length) {
+          await _skipToNext();
+        } else {
+          _skipAttempts = 0;
+        }
+        return;
+      }
+
+      Uri? artUri;
+      if (song.artworkPath != null) {
+        if (song.artworkPath!.startsWith('content://')) {
+          artUri = Uri.parse(song.artworkPath!);
+        } else if (File(song.artworkPath!).existsSync()) {
+          artUri = Uri.file(song.artworkPath!);
+        }
+      }
+
       final audioSource = AudioSource.uri(
         Uri.file(song.filePath),
         tag: MediaItem(
@@ -124,23 +193,21 @@ class AudioPlayerService {
           title: song.title,
           artist: song.artist,
           album: song.album,
-          artUri: song.artworkPath == null
-              ? null
-              : song.artworkPath!.startsWith('content://')
-                  ? Uri.parse(song.artworkPath!)
-                  : Uri.file(song.artworkPath!),
+          artUri: artUri,
         ),
       );
 
       await _player.setAudioSource(audioSource);
+      await _player.setVolume(1.0);
+      debugPrint('Audio source set, starting playback: ${song.title}');
       await _player.play();
+      debugPrint('Playback started for: ${song.title}');
       _beginListeningSession();
-      // BUG FIX: reset skip counter on successful play
+      await _recordEvent(app_events.PlaybackEventType.started);
       _skipAttempts = 0;
       if (song.id != null) await _db.incrementPlayCount(song.id!);
     } catch (e) {
       debugPrint('Playback failed for ${song.filePath}: $e');
-      // BUG FIX: cap skip attempts to prevent infinite loop when all files broken
       _skipAttempts++;
       if (_skipAttempts < _queue.length) {
         await _skipToNext();
@@ -157,12 +224,14 @@ class AudioPlayerService {
 
   Future<void> pause() async {
     await _player.pause();
+    await _recordEvent(app_events.PlaybackEventType.paused);
     await _finishListeningSession();
   }
 
   Future<void> resume() async {
     await _player.play();
     _beginListeningSession();
+    await _recordEvent(app_events.PlaybackEventType.resumed);
   }
 
   void _beginListeningSession() {
@@ -179,7 +248,9 @@ class AudioPlayerService {
         _currentIndex = _shuffleIndices[shuffleIdx + 1];
       } else if (_repeatMode == PlayerRepeatMode.all) {
         _generateShuffleIndices();
-        _currentIndex = _shuffleIndices.first;
+        if (_shuffleIndices.length > 1) {
+          _currentIndex = _shuffleIndices[1];
+        }
       } else {
         return;
       }
@@ -196,6 +267,7 @@ class AudioPlayerService {
   }
 
   Future<void> next() async {
+    await _recordEvent(app_events.PlaybackEventType.skipped);
     await _finishListeningSession();
     _skipAttempts = 0;
     await _skipToNext();
@@ -248,7 +320,7 @@ class AudioPlayerService {
     switch (_repeatMode) {
       case PlayerRepeatMode.none:
         _repeatMode = PlayerRepeatMode.all;
-        _player.setLoopMode(LoopMode.off);
+        _player.setLoopMode(LoopMode.all);
         break;
       case PlayerRepeatMode.all:
         _repeatMode = PlayerRepeatMode.one;
@@ -263,7 +335,9 @@ class AudioPlayerService {
 
   void _generateShuffleIndices() {
     _shuffleIndices = List.generate(_queue.length, (i) => i)..shuffle();
-    _shuffleIndices.remove(_currentIndex);
+    if (_shuffleIndices.contains(_currentIndex)) {
+      _shuffleIndices.remove(_currentIndex);
+    }
     _shuffleIndices.insert(0, _currentIndex);
   }
 
@@ -272,6 +346,7 @@ class AudioPlayerService {
   }
 
   Future<void> _handleSongCompleted() async {
+    await _recordEvent(app_events.PlaybackEventType.completed);
     await _finishListeningSession();
     if (_repeatMode == PlayerRepeatMode.one) {
       await _player.seek(Duration.zero);
@@ -279,6 +354,21 @@ class AudioPlayerService {
       _beginListeningSession();
     } else {
       await _skipToNext();
+    }
+  }
+
+  Future<void> _recordEvent(app_events.PlaybackEventType type) async {
+    final songId = _currentSong?.id;
+    if (songId == null) return;
+    try {
+      await _db.addPlaybackEvent(app_events.PlaybackEvent(
+        songId: songId,
+        type: type,
+        occurredAt: DateTime.now(),
+        positionSeconds: _player.position.inSeconds,
+      ));
+    } catch (error) {
+      debugPrint('Playback event failed for $songId: $error');
     }
   }
 
@@ -326,22 +416,25 @@ class AudioPlayerService {
     _cancelSleepTimers();
     _sleepTimerEnd = DateTime.now().add(Duration(minutes: minutes));
 
-    // BUG FIX: fade starts 30s before end, not during entire timer
-    final fadeDelay = Duration(minutes: minutes) - const Duration(seconds: 33);
+    final totalSeconds = minutes * 60;
+    final fadeStart = totalSeconds - 33;
 
-    if (fadeDelay.inSeconds > 0) {
-      _sleepFadeTimer = Timer(fadeDelay, () async {
+    if (fadeStart > 0) {
+      _sleepFadeTimer = Timer(Duration(seconds: fadeStart), () async {
         if (_sleepTimerEnd == null) return;
-        for (int i = 10; i >= 0; i--) {
+        const steps = 10;
+        const stepDuration = 3;
+        for (int i = steps; i >= 0; i--) {
           if (_sleepTimerEnd == null) return;
-          await _player.setVolume(i / 10.0);
-          await Future.delayed(const Duration(seconds: 3));
+          final targetVolume = i / steps.toDouble();
+          await _player.setVolume(targetVolume);
+          await Future.delayed(const Duration(seconds: stepDuration));
         }
       });
     }
 
     _sleepTimer = Timer(Duration(minutes: minutes), () async {
-      await _player.pause();
+      await pause();
       await _player.setVolume(1.0);
       _sleepTimerEnd = null;
       _sleepFadeTimer = null;
